@@ -1111,13 +1111,14 @@ class GameView(ctx: Context) : View(ctx) {
         val bottom = b - d(if (state.host == firebase.playerId) 184f else 144f)
         val boxR = RectF(l + m, top, l + w - m, max(top + d(100f), bottom))
         box(c, boxR, Color.argb(165, 4, 25, 20), Color.argb(100, 224, 180, 76), d(1f), d(15f))
+        // Toolbar dipisah dari daftar pemain agar tombol tidak menimpa jumlah pemain/baris pertama.
         txt(c, "PEMAIN", boxR.left + d(14f), boxR.top + d(24f), d(11f), GOLD, Paint.Align.LEFT, true)
-        txt(c, "${state.players.size}/4", boxR.right - d(14f), boxR.top + d(24f), d(11f), MUTE, Paint.Align.RIGHT, true)
-        button(c, RectF(boxR.right - d(92f), boxR.top + d(5f), boxR.right - d(48f), boxR.top + d(34f)), "CHAT", "chat", true, true, -1, 8f)
-        button(c, RectF(boxR.right - d(44f), boxR.top + d(5f), boxR.right - d(8f), boxR.top + d(34f)), "☺", "react", true, true, -1, 12f)
+        txt(c, "${state.players.size}/4", boxR.left + d(72f), boxR.top + d(24f), d(10f), MUTE, Paint.Align.LEFT, true)
+        button(c, RectF(boxR.right - d(104f), boxR.top + d(5f), boxR.right - d(50f), boxR.top + d(37f)), "CHAT", "chat", true, true, -1, 8f)
+        button(c, RectF(boxR.right - d(44f), boxR.top + d(5f), boxR.right - d(8f), boxR.top + d(37f)), "☺", "react", true, true, -1, 12f)
         val srv = if (!state.connected) "SERVER OFFLINE" else state.myPing?.let { "SERVER · ${it} ms" } ?: "SERVER ONLINE"
-        txt(c, srv, boxR.right - d(14f), boxR.top + d(39f), d(8f), if (state.connected) OKC else BADC, Paint.Align.RIGHT, true)
-        var yy = boxR.top + d(48f)
+        txt(c, srv, boxR.right - d(14f), boxR.top + d(51f), d(8f), if (state.connected) OKC else BADC, Paint.Align.RIGHT, true)
+        var yy = boxR.top + d(76f)
         state.players.forEachIndexed { index, p ->
             val row = RectF(boxR.left + d(9f), yy - d(17f), boxR.right - d(9f), yy + d(15f))
             if (index % 2 == 0) box(c, row, Color.argb(45, 255, 255, 255), 0, 0f, d(8f))
