@@ -7,6 +7,9 @@ import android.text.InputType
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.ScrollView
+import android.widget.Button
+import android.widget.Toast
 import android.view.Gravity
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -377,6 +380,8 @@ class GameView(ctx: Context) : View(ctx) {
             "lv" -> { lv = h.idx; prefs.edit().putInt("lv", lv).apply() }
             "start" -> startGame(null)
             "multi" -> openMultiplayerDialog()
+            "chat" -> showChatDialog()
+            "react" -> showReactionDialog()
             "lobbyStart" -> roomState?.let { firebase.startGame(it) { r -> if (r.isFailure) { roomMessage = r.exceptionOrNull()?.message ?: "Gagal mulai"; invalidate() } } }
             "lobbyExit" -> { firebase.leave(); roomState = null; multiplayer = false; game = null; screen = Screen.HOME }
             "addBot" -> roomState?.let { st -> firebase.addBot(st.botLevel, st) { r -> if (r.isFailure) { roomMessage = r.exceptionOrNull()?.message ?: "Gagal tambah bot"; invalidate() } } }
@@ -943,7 +948,79 @@ class GameView(ctx: Context) : View(ctx) {
         dialog.window?.setLayout((resources.displayMetrics.widthPixels * .92f).toInt().coerceAtLeast(d(280f).toInt()), -2)
     }
 
+    private fun showChatDialog() {
+        val code = firebase.currentCode ?: return
+        val root = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(d(18f).toInt(), d(16f).toInt(), d(18f).toInt(), d(14f).toInt())
+            background = GradientDrawable().apply { setColor(Color.rgb(4, 39, 29)); setStroke(d(1f).toInt(), GOLD); cornerRadius = d(18f) }
+        }
+        val title = TextView(context).apply { text = "CHAT ROOM"; textSize = 19f; setTextColor(GOLD); gravity = Gravity.CENTER; setTypeface(typeface, Typeface.BOLD) }
+        root.addView(title, LinearLayout.LayoutParams(-1, d(34f).toInt()))
+        val transcript = TextView(context).apply { text = "Memuat pesan…"; textSize = 14f; setTextColor(INK); setPadding(d(10f).toInt(), d(8f).toInt(), d(10f).toInt(), d(8f).toInt()) }
+        val scroll = ScrollView(context).apply { isFillViewport = true; addView(transcript) }
+        val scrollLp = LinearLayout.LayoutParams(-1, d(220f).toInt()).apply { topMargin = d(8f).toInt() }
+        root.addView(scroll, scrollLp)
+        val quick = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
+        val quickTexts = listOf("Gas terus! 🔥", "GG! 👏", "Yah kasian 😅", "Kartu lo jelek banget! 😂")
+        val input = EditText(context).apply { hint = "Tulis pesan…"; setTextColor(INK); setHintTextColor(MUTE); textSize = 14f; filters = arrayOf(InputFilter.LengthFilter(140)); setSingleLine(true) }
+        val send = TextView(context).apply { text = "KIRIM"; textSize = 13f; setTextColor(GOLD); gravity = Gravity.CENTER; setTypeface(typeface, Typeface.BOLD); setPadding(d(12f).toInt(), 0, d(12f).toInt(), 0) }
+        val inputRow = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; addView(input, LinearLayout.LayoutParams(0, d(48f).toInt(), 1f)); addView(send, LinearLayout.LayoutParams(d(68f).toInt(), d(48f).toInt())) }
+        root.addView(inputRow)
+        quickTexts.forEach { message ->
+            val chip = TextView(context).apply { text = message; textSize = 10f; setTextColor(MUTE); gravity = Gravity.CENTER; setPadding(d(4f).toInt(), d(7f).toInt(), d(4f).toInt(), d(7f).toInt()); setOnClickListener { firebase.sendChat(code, message) { r -> if (r.isFailure) roomMessage = r.exceptionOrNull()?.message ?: "Gagal kirim" } } }
+            quick.addView(chip, LinearLayout.LayoutParams(0, -2, 1f))
+        }
+        root.addView(quick)
+        val dialog = AlertDialog.Builder(context).setView(root).create()
+        var lastKey = ""
+        firebase.listenChat(code) { messages ->
+            val fresh = messages.filter { it.key > lastKey && it.playerId != firebase.playerId }
+            if (lastKey.isNotEmpty() && fresh.isNotEmpty()) snd.msg()
+            lastKey = messages.lastOrNull()?.key ?: ""
+            transcript.text = if (messages.isEmpty()) "Belum ada pesan. Sapa temanmu!" else messages.joinToString("\n") { "${it.name}: ${it.message}" }
+            scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
+        }
+        send.setOnClickListener {
+            val text = input.text?.toString().orEmpty()
+            firebase.sendChat(code, text) { result ->
+                if (result.isSuccess) input.setText("")
+                else { input.error = result.exceptionOrNull()?.message ?: "Gagal mengirim" }
+            }
+        }
+        dialog.setOnDismissListener { firebase.stopChatListener() }
+        dialog.show()
+        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        dialog.window?.setLayout((resources.displayMetrics.widthPixels * .92f).toInt(), -2)
+    }
+
+    private fun showReactionDialog() {
+        val code = firebase.currentCode ?: return
+        val emojis = listOf("😂", "🔥", "👏", "😭", "😡", "🤡", "💀", "👀")
+        val grid = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; setPadding(d(16f).toInt(), d(12f).toInt(), d(16f).toInt(), d(12f).toInt()); background = GradientDrawable().apply { setColor(Color.rgb(4, 39, 29)); setStroke(d(1f).toInt(), GOLD); cornerRadius = d(16f) } }
+        val title = TextView(context).apply { text = "REAKSI"; textSize = 17f; setTextColor(GOLD); gravity = Gravity.CENTER; setTypeface(typeface, Typeface.BOLD) }
+        grid.addView(title, LinearLayout.LayoutParams(-1, d(34f).toInt()))
+        var reactionDialog: AlertDialog? = null
+        emojis.chunked(4).forEach { rowItems ->
+            val row = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
+            rowItems.forEach { emoji ->
+                val b = TextView(context).apply { text = emoji; textSize = 28f; gravity = Gravity.CENTER; setOnClickListener { firebase.sendReaction(code, emoji) { result -> if (result.isFailure) Toast.makeText(context, result.exceptionOrNull()?.message ?: "Gagal mengirim reaksi", Toast.LENGTH_SHORT).show() }; reactionDialog?.dismiss() } }
+                row.addView(b, LinearLayout.LayoutParams(0, d(54f).toInt(), 1f))
+            }
+            grid.addView(row)
+        }
+        reactionDialog = AlertDialog.Builder(context).setView(grid).create()
+        reactionDialog?.show()
+        reactionDialog?.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+    }
+
     private fun enterRoom(code: String) {
+        firebase.listenReactions(code) { pid, name, emoji ->
+            if (pid != firebase.playerId) {
+                snd.msg()
+                Toast.makeText(context, "$emoji  $name", Toast.LENGTH_SHORT).show()
+            }
+        }
         firebase.listen(code) { result ->
             result.onFailure {
                 roomMessage = it.message ?: "Koneksi room terputus."
@@ -1036,6 +1113,8 @@ class GameView(ctx: Context) : View(ctx) {
         box(c, boxR, Color.argb(165, 4, 25, 20), Color.argb(100, 224, 180, 76), d(1f), d(15f))
         txt(c, "PEMAIN", boxR.left + d(14f), boxR.top + d(24f), d(11f), GOLD, Paint.Align.LEFT, true)
         txt(c, "${state.players.size}/4", boxR.right - d(14f), boxR.top + d(24f), d(11f), MUTE, Paint.Align.RIGHT, true)
+        button(c, RectF(boxR.right - d(92f), boxR.top + d(5f), boxR.right - d(48f), boxR.top + d(34f)), "CHAT", "chat", true, true, -1, 8f)
+        button(c, RectF(boxR.right - d(44f), boxR.top + d(5f), boxR.right - d(8f), boxR.top + d(34f)), "☺", "react", true, true, -1, 12f)
         val srv = if (!state.connected) "SERVER OFFLINE" else state.myPing?.let { "SERVER · ${it} ms" } ?: "SERVER ONLINE"
         txt(c, srv, boxR.right - d(14f), boxR.top + d(39f), d(8f), if (state.connected) OKC else BADC, Paint.Align.RIGHT, true)
         var yy = boxR.top + d(48f)
@@ -1343,7 +1422,10 @@ class GameView(ctx: Context) : View(ctx) {
         val tbx = l + m + d(78f) + d(8f)
         button(c, RectF(tbx, y, tbx + tbw, y + d(36f)), "Musik", "music", true, !snd.musicOn)
         button(c, RectF(tbx + tbw + d(6f), y, tbx + 2 * tbw + d(6f), y + d(36f)), "Suara", "sfx", true, !snd.sfxOn)
-        txt(c, "Level: " + LEVELS[lv], l + w - m, y + d(24f), d(13f), MUTE, Paint.Align.RIGHT)
+        if (multiplayer) {
+            button(c, RectF(l + w - m - d(116f), y, l + w - m - d(60f), y + d(36f)), "CHAT", "chat", true, true, -1, 9f)
+            button(c, RectF(l + w - m - d(52f), y, l + w - m, y + d(36f)), "☺", "react", true, true, -1, 13f)
+        } else txt(c, "Level: " + LEVELS[lv], l + w - m, y + d(24f), d(13f), MUTE, Paint.Align.RIGHT)
         y += d(44f)
 
         val pend = g.dec.isNotEmpty()

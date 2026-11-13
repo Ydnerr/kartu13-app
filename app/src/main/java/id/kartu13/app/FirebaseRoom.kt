@@ -12,6 +12,7 @@ import com.google.firebase.database.Transaction
 import com.google.firebase.database.ServerValue
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import com.google.firebase.database.ValueEventListener
 import java.util.UUID
 import kotlin.random.Random
@@ -48,6 +49,7 @@ class FirebaseRoom(context: Context) {
     }
 
     data class Player(val id: String, val name: String, val joinedAt: Long, val bot: Boolean)
+    data class ChatMessage(val key: String, val playerId: String, val name: String, val message: String, val time: Long)
     data class Presence(val online: Boolean?, val seen: Long, val ping: Long?, val hiddenAt: Long, val offAt: Long)
     data class PlayerStatus(val state: String, val ping: Long? = null) // on, away, off, afk, bot
     data class RoomState(
@@ -448,6 +450,100 @@ class FirebaseRoom(context: Context) {
             ?: done(Result.failure(IllegalStateException("Room belum terhubung.")))
     }
 
+
+    private var chatRef: DatabaseReference? = null
+    private var chatListener: ValueEventListener? = null
+    private var lastChatSend = 0L
+    private var lastReactSend = 0L
+    private var reactRef: DatabaseReference? = null
+    private var reactListener: com.google.firebase.database.ChildEventListener? = null
+    private val allowedReactions = setOf("😂", "🔥", "👏", "😭", "😡", "🤡", "💀", "👀")
+
+    fun listenChat(code: String, onMessages: (List<ChatMessage>) -> Unit) {
+        stopChatListener()
+        val ref = db.child("rooms").child(code).child("chat").limitToLast(50)
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val messages = snapshot.children.mapNotNull { child ->
+                    val p = child.child("p").getValue(String::class.java) ?: return@mapNotNull null
+                    ChatMessage(
+                        child.key ?: return@mapNotNull null,
+                        p,
+                        child.child("n").getValue(String::class.java) ?: "?",
+                        child.child("m").getValue(String::class.java) ?: "",
+                        (child.child("t").value as? Number)?.toLong() ?: 0L
+                    )
+                }
+                onMessages(messages)
+            }
+            override fun onCancelled(error: DatabaseError) { }
+        }
+        chatRef = ref
+        chatListener = listener
+        ref.addValueEventListener(listener)
+    }
+
+    fun stopChatListener() {
+        chatListener?.let { listener -> chatRef?.removeEventListener(listener) }
+        chatListener = null
+        chatRef = null
+    }
+
+    fun sendChat(code: String, message: String, done: (Result<Unit>) -> Unit = {}) {
+        val text = message.trim().take(140)
+        val now = SystemClock.elapsedRealtime()
+        if (text.isEmpty()) return done(Result.failure(IllegalArgumentException("Pesan kosong.")))
+        if (now - lastChatSend < 700L) return done(Result.failure(IllegalStateException("Tunggu sebentar sebelum mengirim pesan lagi.")))
+        lastChatSend = now
+        val name = roomPlayers.firstOrNull { it.id == playerId }?.name ?: "?"
+        db.child("rooms").child(code).child("chat").push()
+            .setValue(mapOf("p" to playerId, "n" to name, "m" to text, "t" to ServerValue.TIMESTAMP))
+            .addOnSuccessListener { done(Result.success(Unit)) }
+            .addOnFailureListener { done(Result.failure(it)) }
+    }
+
+    fun listenReactions(code: String, onReaction: (String, String, String) -> Unit) {
+        stopReactionListener()
+        val ref = db.child("rooms").child(code).child("react").limitToLast(1)
+        val ready = booleanArrayOf(false)
+        val listener = object : com.google.firebase.database.ChildEventListener {
+            override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
+                if (!ready[0]) return
+                val emoji = snapshot.child("e").getValue(String::class.java) ?: return
+                if (emoji !in allowedReactions) return
+                val pid = snapshot.child("p").getValue(String::class.java) ?: return
+                val name = snapshot.child("n").getValue(String::class.java) ?: "?"
+                onReaction(pid, name, emoji)
+            }
+            override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) { }
+            override fun onChildRemoved(snapshot: DataSnapshot) { }
+            override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) { }
+            override fun onCancelled(error: DatabaseError) { }
+        }
+        reactRef = ref
+        reactListener = listener
+        ref.addChildEventListener(listener)
+        ref.get().addOnSuccessListener { ready[0] = true }
+    }
+
+    fun stopReactionListener() {
+        reactListener?.let { listener -> reactRef?.removeEventListener(listener) }
+        reactListener = null
+        reactRef = null
+    }
+
+    fun sendReaction(code: String, emoji: String, done: (Result<Unit>) -> Unit = {}) {
+        if (emoji !in allowedReactions) return done(Result.failure(IllegalArgumentException("Reaksi tidak dikenal.")))
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastReactSend < 400L) return done(Result.failure(IllegalStateException("Tunggu sebentar.")))
+        lastReactSend = now
+        val name = roomPlayers.firstOrNull { it.id == playerId }?.name ?: "?"
+        val ref = db.child("rooms").child(code).child("react").push()
+        ref.setValue(mapOf("p" to playerId, "n" to name, "e" to emoji))
+            .addOnSuccessListener { main.postDelayed({ ref.removeValue() }, 8_000L); done(Result.success(Unit)) }
+            .addOnFailureListener { done(Result.failure(it)) }
+    }
+
     fun leave(deleteLobbyIfHost: Boolean = true) {
         val ref = roomRef
         stopListening()
@@ -467,6 +563,8 @@ class FirebaseRoom(context: Context) {
     }
 
     fun stopListening() {
+        stopChatListener()
+        stopReactionListener()
         main.removeCallbacks(heartbeat); main.removeCallbacks(presenceTick)
         roomRef?.child("presence")?.let { ref -> presenceListener?.let { ref.removeEventListener(it) } }
         presenceListener = null

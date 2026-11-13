@@ -58,10 +58,14 @@ Catatan: source sudah ditambahkan. Build Android penuh belum dijalankan di lingk
   - ✅ Bot dapat mengambil giliran pemain AFK setelah grace period; effective driver mengikuti prioritas host aktif lalu pemain aktif berikutnya.
   - ✅ Indikator status dan ping di lobby serta kursi pemain; palet hijau / amber / merah mengikuti versi web.
   - ⬜ Validasi runtime dua klien (Android ↔ web), terutama saat app masuk background, koneksi putus mendadak, dan reconnect. Belum boleh dianggap rilis sebelum pengujian ini lolos.
-- **3c. Chat dan reaksi**
-  - ⬜ Chat room (maks 140 huruf) + 4 chip pesan cepat, badge pesan belum dibaca, toast
-  - ⬜ Reaksi emoji melayang: 😂 🔥 👏 😭 😡 🤡 💀 👀
-  - ⬜ Bunyi `Snd.msg` saat ada pesan masuk
+- **🟡 3c. Chat dan reaksi (implementasi awal)**
+  - ✅ Chat realtime di `rooms/{kode}/chat`, kompatibel dengan format web v44 (`p`, `n`, `m`, `t`), maksimal 50 pesan terakhir.
+  - ✅ Batas pesan 140 karakter dan jeda kirim minimum 700 ms.
+  - ✅ Empat pesan cepat sesuai teks web.
+  - ✅ Reaksi di `rooms/{kode}/react` dengan emoji 😂 🔥 👏 😭 😡 🤡 💀 👀; entri reaksi dihapus setelah 8 detik.
+  - ✅ Bunyi `Snd.msg` untuk pesan/reaksi baru dari pemain lain.
+  - 🟡 UI Android memakai dialog chat dan pemilih reaksi. Toast dipakai sebagai notifikasi reaksi; animasi emoji melayang, badge unread, dan toast pratinjau chat belum diparitas penuh dengan web.
+  - ⬜ Validasi runtime dua klien (Android ↔ web) dan build release masih wajib.
 
 ### ⬜ Tahap 4: voice chat
 - ⬜ Suara antar pemain (WebRTC mesh, sinyal lewat Firebase `voice` + `vsig`)
@@ -82,7 +86,8 @@ Catatan: source sudah ditambahkan. Build Android penuh belum dijalankan di lingk
 
 ## Keputusan teknis berikutnya
 - **Room campur web + Android:** sudah dipilih. Kedua klien memakai struktur Firebase dan `VMAJ` yang sama (`44`).
-- **Presence dan failover:** lanjutkan di Tahap 3b dengan heartbeat dan `onDisconnect`, lalu pindahkan pemilihan host efektif ke mekanisme presence.
+- **Presence dan failover:** implementasi awal 3b sudah ditambahkan; uji silang runtime Android ↔ web tetap diperlukan.
+- **Chat dan reaksi:** implementasi awal 3c sudah ditambahkan; uji silang runtime Android ↔ web tetap diperlukan.
 - **Voice chat:** WebRTC di Android membutuhkan library native berukuran besar. Putuskan di Tahap 4 apakah fitur ini tetap dipakai atau dicoret dari versi Android.
 - **Tidak perlu di-port:** service worker (`sw.js`, cache offline) karena aset sudah ada di dalam APK, dan `build.sh` (minify JS) karena tidak ada JS di app ini.
 
