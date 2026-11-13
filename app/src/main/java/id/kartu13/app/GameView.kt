@@ -1,6 +1,11 @@
 package id.kartu13.app
 
 import android.content.Context
+import android.app.AlertDialog
+import android.text.InputFilter
+import android.text.InputType
+import android.widget.EditText
+import android.widget.LinearLayout
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
@@ -57,7 +62,7 @@ private val RULES = arrayOf(
 )
 
 class GameView(ctx: Context) : View(ctx) {
-    private enum class Screen { HOME, GAME, RULES, TUTMENU, TUTSLIDE, GUIDE }
+    private enum class Screen { HOME, GAME, LOBBY, RULES, TUTMENU, TUTSLIDE, GUIDE }
 
     private class Hit(val r: RectF, val id: String, val idx: Int)
 
@@ -65,6 +70,12 @@ class GameView(ctx: Context) : View(ctx) {
     private val handler = Handler(Looper.getMainLooper())
     private val prefs = ctx.getSharedPreferences("k13", Context.MODE_PRIVATE)
     private val snd = Snd(ctx)
+    private val firebase by lazy { FirebaseRoom(ctx) }
+    private var roomState: FirebaseRoom.RoomState? = null
+    private var multiplayer = false
+    private var seatPids: List<String> = emptyList()
+    private var seatNames: List<String> = NAMES.toList()
+    private var roomMessage = ""
     private var lastLog = 0
     private var screen = Screen.HOME
     private var lv = prefs.getInt("lv", 1).coerceIn(0, 3)
@@ -140,6 +151,8 @@ class GameView(ctx: Context) : View(ctx) {
 
     // ---------------------------------------------------------------- alur game
     private fun startGame(lead: Int?) {
+        multiplayer = false
+        seatNames = NAMES.toList()
         handler.removeCallbacks(botTask)
         game = deal(listOf(0, 1, 2, 3), lead)
         lastLog = game?.log?.size ?: 0
@@ -180,6 +193,7 @@ class GameView(ctx: Context) : View(ctx) {
 
     private fun scheduleBot() {
         handler.removeCallbacks(botTask)
+        if (multiplayer) return
         val g = game ?: return
         if (g.over || screen != Screen.GAME) return
         if (g.dec.isNotEmpty()) {
@@ -215,9 +229,19 @@ class GameView(ctx: Context) : View(ctx) {
         if (g.over || g.order[g.turn] != 0 || g.dec.isNotEmpty()) return
         val cards = sel.toList()
         if (!pass) {
-            if (cards.isEmpty()) { msg = "Pilih kartu dulu."; return }
+            if (cards.isEmpty()) { msg = "Pilih kartu dulu."; invalidate(); return }
             val w = why(g, 0, cards)
-            if (w.isNotEmpty()) { msg = w; return }
+            if (w.isNotEmpty()) { msg = w; invalidate(); return }
+        }
+        if (multiplayer) {
+            msg = "Mengirim langkah..."
+            invalidate()
+            firebase.submitMove(if (pass) emptyList() else cards, pass) { result ->
+                if (result.isSuccess) { msg = ""; sel.clear() }
+                else msg = result.exceptionOrNull()?.message ?: "Gagal mengirim langkah."
+                invalidate()
+            }
+            return
         }
         val ok = move(g, 0, if (pass) emptyList() else cards, pass)
         if (!ok) {
@@ -321,13 +345,18 @@ class GameView(ctx: Context) : View(ctx) {
 
     fun stop() {
         handler.removeCallbacksAndMessages(null)
+        if (multiplayer || roomState != null) firebase.stopListening()
         snd.release()
     }
 
     fun onBack(): Boolean {
         if (screen == Screen.HOME) return false
         handler.removeCallbacks(botTask)
-        screen = if (screen == Screen.TUTSLIDE || screen == Screen.GUIDE) Screen.TUTMENU else Screen.HOME
+        if (screen == Screen.TUTSLIDE || screen == Screen.GUIDE) screen = Screen.TUTMENU
+        else {
+            if (screen == Screen.LOBBY || multiplayer) firebase.leave()
+            multiplayer = false; roomState = null; game = null; screen = Screen.HOME
+        }
         tutScroll = 0f
         invalidate()
         return true
@@ -338,6 +367,12 @@ class GameView(ctx: Context) : View(ctx) {
         when (h.id) {
             "lv" -> { lv = h.idx; prefs.edit().putInt("lv", lv).apply() }
             "start" -> startGame(null)
+            "multi" -> openMultiplayerDialog()
+            "lobbyStart" -> roomState?.let { firebase.startGame(it) { r -> if (r.isFailure) { roomMessage = r.exceptionOrNull()?.message ?: "Gagal mulai"; invalidate() } } }
+            "lobbyExit" -> { firebase.leave(); roomState = null; multiplayer = false; game = null; screen = Screen.HOME }
+            "addBot" -> roomState?.let { st -> firebase.addBot(st.botLevel, st) { r -> if (r.isFailure) { roomMessage = r.exceptionOrNull()?.message ?: "Gagal tambah bot"; invalidate() } } }
+            "botLevel" -> roomState?.let { st -> firebase.setBotLevel((st.botLevel + 1) % 4, st) { r -> if (r.isFailure) { roomMessage = r.exceptionOrNull()?.message ?: "Gagal ubah level"; invalidate() } } }
+            "rmBot" -> roomState?.players?.getOrNull(h.idx)?.let { p -> roomState?.let { st -> firebase.removeBot(p.id, st) } }
             "rules" -> { screen = Screen.RULES; rulesScroll = 0f }
             "tut" -> screen = Screen.TUTMENU
             "ts" -> { tutI = 0; tutScroll = 0f; screen = Screen.TUTSLIDE }
@@ -363,8 +398,8 @@ class GameView(ctx: Context) : View(ctx) {
             }
             "gn" -> { gI = min(GUIDE.size - 1, gI + 1); gStep() }
             "gm" -> { lv = 0; startGame(null) }
-            "back", "menu" -> { handler.removeCallbacks(botTask); screen = Screen.HOME }
-            "again" -> startGame(nextLead())
+            "back", "menu" -> { handler.removeCallbacks(botTask); if (multiplayer) firebase.leave(); multiplayer = false; roomState = null; game = null; screen = Screen.HOME }
+            "again" -> if (multiplayer) roomState?.let { st -> firebase.startGame(st) { r -> if (r.isFailure) { msg = r.exceptionOrNull()?.message ?: "Gagal mulai ulang"; invalidate() } } } else startGame(nextLead())
             "card" -> {
                 msg = ""
                 val up = !sel.contains(h.idx)
@@ -380,8 +415,8 @@ class GameView(ctx: Context) : View(ctx) {
             "sfx" -> snd.setSfx(!snd.sfxOn)
             "play" -> humanPlay(false)
             "pass" -> humanPlay(true)
-            "stopY" -> { game?.let { decide(it, 0, true) }; afterMove() }
-            "stopN" -> { game?.let { decide(it, 0, false) }; afterMove() }
+            "stopY" -> { if (multiplayer) firebase.submitDecision(true) { r -> if (r.isFailure) msg = r.exceptionOrNull()?.message ?: "Gagal mengirim pilihan"; invalidate() } else { game?.let { decide(it, 0, true) }; afterMove() } }
+            "stopN" -> { if (multiplayer) firebase.submitDecision(false) { r -> if (r.isFailure) msg = r.exceptionOrNull()?.message ?: "Gagal mengirim pilihan"; invalidate() } else { game?.let { decide(it, 0, false) }; afterMove() } }
         }
         invalidate()
     }
@@ -597,6 +632,7 @@ class GameView(ctx: Context) : View(ctx) {
         val b = (height - paddingBottom).toFloat()
         when (screen) {
             Screen.HOME -> drawHome(c, l, t, w, b)
+            Screen.LOBBY -> drawLobby(c, l, t, w, b)
             Screen.GAME -> {
                 val bt = now - boomT0
                 if (boomT0 > 0L && bt < 420L) { // layar goyang sebentar pas bom
@@ -666,7 +702,7 @@ class GameView(ctx: Context) : View(ctx) {
         var y = fanY + chh + d(44f)
         txt(c, "Kartu 13", cx, y, d(40f), GOLD, Paint.Align.CENTER, true)
         y += d(26f)
-        txt(c, "Poker 13 · lawan bot", cx, y, d(15f), MUTE)
+        txt(c, "Poker 13 · offline & multiplayer", cx, y, d(15f), MUTE)
         y += d(40f)
         txt(c, "Level bot", cx, y, d(14f), INK)
         y += d(12f)
@@ -678,10 +714,12 @@ class GameView(ctx: Context) : View(ctx) {
         }
         y += d(42f) + d(28f)
         val ww = min(w - 2 * m, d(340f))
-        button(c, RectF(cx - ww / 2, y, cx + ww / 2, y + d(56f)), "Main lawan bot", "start", true, false)
-        y += d(56f) + d(12f)
-        button(c, RectF(cx - ww / 2, y, cx + ww / 2, y + d(48f)), "Tutorial", "tut", true, true)
-        y += d(48f) + d(12f)
+        button(c, RectF(cx - ww / 2, y, cx + ww / 2, y + d(52f)), "Main lawan bot", "start", true, false)
+        y += d(52f) + d(8f)
+        button(c, RectF(cx - ww / 2, y, cx + ww / 2, y + d(46f)), "Multiplayer online", "multi", true, true)
+        y += d(46f) + d(8f)
+        button(c, RectF(cx - ww / 2, y, cx + ww / 2, y + d(44f)), "Tutorial", "tut", true, true)
+        y += d(44f) + d(8f)
         val tg = d(6f)
         val tw = (ww - 2 * tg) / 3
         val x0 = cx - ww / 2
@@ -689,8 +727,130 @@ class GameView(ctx: Context) : View(ctx) {
         button(c, RectF(x0 + tw + tg, y, x0 + 2 * tw + tg, y + d(40f)), "Suara: " + (if (snd.sfxOn) "nyala" else "mati"), "sfx", true, !snd.sfxOn, -1, 12f)
         button(c, RectF(x0 + 2 * (tw + tg), y, x0 + ww, y + d(40f)), "Kartu: " + (if (big) "besar" else "normal"), "big", true, !big, -1, 12f)
         val v = versionName()
+        if (roomMessage.isNotEmpty()) txt(c, roomMessage, cx, b - d(56f), d(11f), WARN, Paint.Align.CENTER)
         txt(c, "© 2026 Poker 13" + (if (v.isNotEmpty()) " · v$v" else ""), cx, b - d(40f), d(11f), MUTE)
         txt(c, "AI-assisted by Claude · Card art: Vecteezy.com", cx, b - d(24f), d(11f), MUTE)
+    }
+
+    private fun playerName(seat: Int): String = seatNames.getOrNull(seat) ?: NAMES.getOrElse(seat) { "Pemain" }
+
+    private fun openMultiplayerDialog() {
+        roomMessage = ""
+        val nameInput = EditText(context).apply {
+            hint = "Nama pemain (maks. 14 karakter)"
+            setText(firebase.savedName())
+            filters = arrayOf(InputFilter.LengthFilter(14))
+            singleLine = true
+        }
+        val wrap = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(d(20f).toInt(), d(8f).toInt(), d(20f).toInt(), 0)
+            addView(nameInput)
+        }
+        AlertDialog.Builder(context)
+            .setTitle("Multiplayer")
+            .setMessage("Buat room baru atau masuk dengan kode 5 angka.")
+            .setView(wrap)
+            .setPositiveButton("Buat room") { _, _ ->
+                val n = nameInput.text.toString().trim()
+                if (n.isEmpty()) { roomMessage = "Nama pemain wajib diisi."; invalidate(); return@setPositiveButton }
+                roomMessage = "Membuat room..."; invalidate()
+                firebase.createRoom(n) { result ->
+                    if (result.isSuccess) enterRoom(result.getOrThrow())
+                    else { roomMessage = result.exceptionOrNull()?.message ?: "Gagal membuat room."; invalidate() }
+                }
+            }
+            .setNeutralButton("Join room") { _, _ ->
+                val n = nameInput.text.toString().trim()
+                if (n.isEmpty()) { roomMessage = "Nama pemain wajib diisi."; invalidate(); return@setNeutralButton }
+                val codeInput = EditText(context).apply {
+                    hint = "Kode room 5 angka"
+                    setText(firebase.currentCode ?: "")
+                    inputType = InputType.TYPE_CLASS_NUMBER
+                    filters = arrayOf(InputFilter.LengthFilter(5))
+                    singleLine = true
+                }
+                AlertDialog.Builder(context).setTitle("Join room").setView(codeInput)
+                    .setPositiveButton("Gabung") { _, _ ->
+                        roomMessage = "Menghubungkan..."; invalidate()
+                        firebase.joinRoom(codeInput.text.toString(), n) { result ->
+                            if (result.isSuccess) enterRoom(result.getOrThrow())
+                            else { roomMessage = result.exceptionOrNull()?.message ?: "Gagal join room."; invalidate() }
+                        }
+                    }.setNegativeButton("Batal", null).show()
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
+    private fun enterRoom(code: String) {
+        firebase.listen(code) { result ->
+            result.onFailure {
+                roomMessage = it.message ?: "Koneksi room terputus."
+                if (screen == Screen.LOBBY) invalidate()
+            }.onSuccess { state ->
+                roomState = state
+                roomMessage = ""
+                if (state.status == "lobby") {
+                    multiplayer = false
+                    screen = Screen.LOBBY
+                } else {
+                    val raw = state.game
+                    val decoded = raw?.let { GameWire.decode(it, firebase.playerId) }
+                    if (decoded != null) {
+                        val (remoteGame, ids) = decoded
+                        val byId = state.players.associateBy { it.id }
+                        if (screen != Screen.GAME || !multiplayer) lastLog = 0
+                        game = remoteGame
+                        seatPids = ids
+                        seatNames = ids.mapIndexed { i, id -> if (i == 0) "Kamu" else byId[id]?.name ?: "Pemain $i" }
+                        multiplayer = true
+                        screen = Screen.GAME
+                        sel.retainAll(remoteGame.hands[0].toSet())
+                        playSfx(remoteGame)
+                        turnBuzz(remoteGame)
+                        firebase.runBotTurn(state)
+                    } else {
+                        roomMessage = "Versi game tidak cocok atau data room rusak."
+                    }
+                }
+                invalidate()
+            }
+        }
+    }
+
+    private fun drawLobby(c: Canvas, l: Float, t: Float, w: Float, b: Float) {
+        val state = roomState ?: return
+        val cx = l + w / 2
+        val m = d(18f)
+        txt(c, "Ruang tunggu", cx, t + d(42f), d(24f), GOLD, Paint.Align.CENTER, true)
+        txt(c, "Kode room", cx, t + d(82f), d(14f), MUTE, Paint.Align.CENTER)
+        txt(c, state.code, cx, t + d(132f), d(42f), INK, Paint.Align.CENTER, true)
+        val top = t + d(158f)
+        val bottom = b - d(180f)
+        val boxR = RectF(l + m, top, l + w - m, bottom)
+        box(c, boxR, PANEL, EDGE, d(1f), d(14f))
+        txt(c, "Pemain (${state.players.size}/4)", boxR.left + d(14f), boxR.top + d(28f), d(15f), GOLD, Paint.Align.LEFT, true)
+        var yy = boxR.top + d(58f)
+        state.players.forEach { p ->
+            val label = p.name + (if (p.id == state.host) " · HOST" else "") + (if (p.id == firebase.playerId) " · KAMU" else "")
+            txt(c, label, boxR.left + d(14f), yy, d(15f), INK, Paint.Align.LEFT)
+            if (state.host == firebase.playerId && p.bot) {
+                button(c, RectF(boxR.right - d(52f), yy - d(22f), boxR.right - d(8f), yy + d(8f)), "Hapus", "rmBot", true, true, state.players.indexOf(p), 10f)
+            }
+            yy += d(34f)
+        }
+        if (state.host == firebase.playerId) {
+            val canAdd = state.players.count { !it.bot } >= 2 && state.players.size < 4
+            val half = (w - 2 * m - d(8f)) / 2
+            button(c, RectF(l + m, b - d(164f), l + m + half, b - d(120f)), "Tambah bot", "addBot", canAdd, true)
+            button(c, RectF(l + m + half + d(8f), b - d(164f), l + w - m, b - d(120f)), "Level: ${LEVELS[state.botLevel]}", "botLevel", true, true, state.botLevel)
+            button(c, RectF(l + m, b - d(110f), l + w - m, b - d(62f)), "Mulai game", "lobbyStart", state.players.size >= 2, false)
+        } else {
+            txt(c, "Menunggu host memulai game...", cx, b - d(130f), d(14f), MUTE, Paint.Align.CENTER)
+        }
+        button(c, RectF(l + m, b - d(54f), l + w - m, b - d(8f)), "Keluar room", "lobbyExit", true, true)
+        if (roomMessage.isNotEmpty()) txt(c, roomMessage, cx, b - d(2f), d(10f), WARN, Paint.Align.CENTER)
     }
 
     private fun drawRules(c: Canvas, l: Float, t: Float, w: Float, b: Float) {
@@ -977,6 +1137,7 @@ class GameView(ctx: Context) : View(ctx) {
         val seats = intArrayOf(3, 2, 1)
         for (k in seats.indices) {
             val p = seats[k]
+            if (p >= g.hands.size) continue
             val x0 = l + m + k * (ow + gap)
             val r = RectF(x0, y, x0 + ow, y + oh)
             seatR[p] = r
@@ -985,7 +1146,7 @@ class GameView(ctx: Context) : View(ctx) {
             val dim = g.passed.contains(p) || rank > 0
             box(c, r, PANEL, if (turn) GOLD else EDGE, if (turn) d(3f) else d(1f), d(12f))
             val tc = if (dim) MUTE else INK
-            txt(c, NAMES[p], r.centerX(), r.top + d(20f), d(14f), tc, Paint.Align.CENTER, true)
+            txt(c, playerName(p), r.centerX(), r.top + d(20f), d(14f), tc, Paint.Align.CENTER, true)
             val st = if (rank > 0) "Juara " + rank + (if (g.stopped.contains(p)) " (murni)" else "")
             else if (g.passed.contains(p)) "lewat"
             else if (g.dec.contains(p)) "murni, milih..."
@@ -1029,7 +1190,7 @@ class GameView(ctx: Context) : View(ctx) {
                 txt(c, if (g.first) "Pemegang angka 3 keluarin semua kartu 3-nya" else "Bebas keluarin kombinasi apa aja",
                     tr.centerX(), tr.centerY() + d(18f), d(13f), MUTE)
             } else {
-                val title = NAMES[last.p] + " · " + (TYPE_NAME[last.t] ?: "") + (if (last.t == 'r') " " + last.n else "")
+                val title = playerName(last.p) + " · " + (TYPE_NAME[last.t] ?: "") + (if (last.t == 'r') " " + last.n else "")
                 txt(c, title, tr.centerX(), tr.top + d(28f), d(15f), INK, Paint.Align.CENTER, true)
                 val n = last.c.size
                 val availH = tr.height() - d(80f)
@@ -1083,7 +1244,7 @@ class GameView(ctx: Context) : View(ctx) {
                     }
                 }
             }
-            val who = if (myTurn) "Giliran lo!" else if (pend) "Nunggu pilihan kartu murni" else "Giliran " + NAMES[cur]
+            val who = if (myTurn) "Giliran lo!" else if (pend) "Nunggu pilihan kartu murni" else "Giliran " + playerName(cur)
             txt(c, who, tr.centerX(), tr.bottom - d(14f), d(14f), if (myTurn) GOLD else MUTE, Paint.Align.CENTER, myTurn)
         }
 
@@ -1208,16 +1369,16 @@ class GameView(ctx: Context) : View(ctx) {
         val cx = tr.centerX()
         val s2 = g.self2
         val q2 = g.quad2
-        val title = if (g.bomb) NAMES[g.winner ?: 0] + " ngebom kartu 2: menang!"
-        else if (s2 != null) NAMES[s2] + " habis kartu pakai 2: kalah"
-        else if (q2 != null) NAMES[q2] + " dapat 4 kartu 2: kalah"
+        val title = if (g.bomb) playerName(g.winner ?: 0) + " ngebom kartu 2: menang!"
+        else if (s2 != null) playerName(s2) + " habis kartu pakai 2: kalah"
+        else if (q2 != null) playerName(q2) + " dapat 4 kartu 2: kalah"
         else "Game selesai"
         txt(c, title, cx, tr.top + d(34f), d(17f), GOLD, Paint.Align.CENTER, true)
         var yy = tr.top + d(66f)
         if (!g.bomb && g.winner != null) {
             for (i in g.fin.indices) {
                 val p = g.fin[i]
-                val label = "Juara " + (i + 1) + ": " + NAMES[p] + (if (g.stopped.contains(p)) " (murni)" else "")
+                val label = "Juara " + (i + 1) + ": " + playerName(p) + (if (g.stopped.contains(p)) " (murni)" else "")
                 txt(c, label, cx, yy, d(16f), if (p == 0) GOLD else INK, Paint.Align.CENTER, p == 0)
                 yy += d(26f)
             }

@@ -61,6 +61,21 @@ jobs:
           fi
           echo "KEYSTORE_FILE=$KS" >> "$GITHUB_ENV"
 
+      - name: Verify AndroidX configuration
+        run: |
+          echo "Repository root: $(pwd)"
+          echo "Gradle files:"
+          ls -la
+          if [ ! -f gradle.properties ]; then
+            echo "ERROR: gradle.properties tidak ditemukan di root project"
+            exit 1
+          fi
+          grep -n "^android.useAndroidX=" gradle.properties || true
+          grep -q "^android.useAndroidX=true$" gradle.properties || {
+            echo "ERROR: android.useAndroidX=true tidak ditemukan di gradle.properties root"
+            exit 1
+          }
+
       - name: Build APK release
         run: gradle assembleRelease --no-daemon --stacktrace
 
