@@ -36,7 +36,7 @@ val TUT: List<Slide> = listOf(
     ),
     Slide(
         "Kombinasi dasar",
-        listOf("Lo bisa keluarin satu jenis kombinasi tiap giliran:"),
+        listOf("Kamu bisa keluarin satu jenis kombinasi tiap giliran:"),
         ex = listOf("Tunggal (1 kartu)" to listOf("9♦"),
             "Pasangan (2 angka sama)" to listOf("5♦", "5♥"),
             "3 kembar (3 angka sama)" to listOf("8♠", "8♣", "8♦"))
@@ -58,9 +58,9 @@ val TUT: List<Slide> = listOf(
     ),
     Slide(
         "Cara melawan kartu di meja",
-        listOf("Lo harus keluarin kombinasi yang sejenis, jumlah kartunya sama, dan lebih tinggi. Atau pilih Lewat.", "Untuk kombinasi + pasangan, yang dibandingkan cuma bagian utamanya (3 kembar, seri, atau 4 kembar). Pasangannya bebas."),
-        ex = listOf("Meja: pasangan 5. Lo boleh:" to listOf("7♠", "7♣"),
-            "Meja: 4 4 4 + 5 5. Lo boleh:" to listOf("6♠", "6♣", "6♦", "4♥", "4♣"),
+        listOf("Kamu harus keluarin kombinasi yang sejenis, jumlah kartunya sama, dan lebih tinggi. Atau pilih Lewat.", "Untuk kombinasi + pasangan, yang dibandingkan cuma bagian utamanya (3 kembar, seri, atau 4 kembar). Pasangannya bebas."),
+        ex = listOf("Meja: pasangan 5. Kamu boleh:" to listOf("7♠", "7♣"),
+            "Meja: 4 4 4 + 5 5. Kamu boleh:" to listOf("6♠", "6♣", "6♦", "4♥", "4♣"),
             "Meja: seri 3♠ 4♠ 5♠. Seri beda logo boleh:" to listOf("6♦", "7♦", "8♦"))
     ),
     Slide(
@@ -88,8 +88,8 @@ val TUT: List<Slide> = listOf(
     ),
     Slide(
         "Dua cara kalah instan",
-        listOf("Ngebom diri sendiri: kalau kartu terakhir lo (yang bikin kartu habis) mengandung kartu 2, lo kalah. Game dibatalkan, nggak ada pemenang, dan game berikutnya mulai dari fase kumpulin 3.", "Dapat 4 kartu 2 di tangan awal: langsung kalah, game diulang dari fase kumpulin 3."),
-        ex = listOf("Kartu terakhir ini bikin lo kalah:" to listOf("2♠"))
+        listOf("Ngebom diri sendiri: kalau kartu terakhir kamu (yang bikin kartu habis) mengandung kartu 2, kamu kalah. Game dibatalkan, nggak ada pemenang, dan game berikutnya mulai dari fase kumpulin 3.", "Dapat 4 kartu 2 di tangan awal: langsung kalah, game diulang dari fase kumpulin 3."),
+        ex = listOf("Kartu terakhir ini bikin kamu kalah:" to listOf("2♠"))
     ),
     Slide(
         "Awal game dan fase kumpulin 3",
@@ -98,16 +98,16 @@ val TUT: List<Slide> = listOf(
     ),
     Slide(
         "Kartu murni dan juara",
-        listOf("Kartu murni = nggak dapat J, Q, K sama sekali. Di awal game lo bisa pilih Berhenti atau Lanjut main. Berhenti bikin lo langsung jadi juara berikutnya (juara 1 kalau yang pertama), dan game tetap lanjut.", "Juara lain harus ngabisin kartunya beneran. Juara terakhir otomatis yang masih punya sisa kartu."),
+        listOf("Kartu murni = nggak dapat J, Q, K sama sekali. Di awal game kamu bisa pilih Berhenti atau Lanjut main. Berhenti bikin kamu langsung jadi juara berikutnya (juara 1 kalau yang pertama), dan game tetap lanjut.", "Juara lain harus ngabisin kartunya beneran. Juara terakhir otomatis yang masih punya sisa kartu."),
         ex = listOf("Contoh tangan murni (tanpa J, Q, K)" to listOf("3♠", "5♦", "7♥", "9♣", "A♠", "2♦"))
     ),
     Slide(
         "Mengatur kartu dan tombol",
-        listOf("Kartu lo nggak diurutin otomatis. Tahan kartu sebentar lalu geser ke posisi baru. Tombol Kelompokkan merapikan jadi tunggal, pasangan, 3 kembar, seri, lalu 4 kembar.", "Pilih kartu dengan menekannya, lalu tekan Mainkan. Salah pilih? Tekan Batal pilih.")
+        listOf("Kartu kamu nggak diurutin otomatis. Tahan kartu sebentar lalu geser ke posisi baru. Tombol Kelompokkan merapikan jadi tunggal, pasangan, 3 kembar, seri, lalu 4 kembar.", "Pilih kartu dengan menekannya, lalu tekan Mainkan. Salah pilih? Tekan Batal pilih.")
     ),
     Slide(
         "Lawan bot",
-        listOf("Lo lawan 3 bot. Tingkat: Mudah (main acak), Sedang (kartu terendah dulu, simpan bom dan 2), Susah (jaga pasangan dan 3 kembar), Master (ngitung kartu yang belum keluar).", "Aturannya sama persis dengan versi web. Coba dulu di tingkat Mudah buat latihan."),
+        listOf("Kamu lawan 3 bot. Tingkat: Mudah (main acak), Sedang (kartu terendah dulu, simpan bom dan 2), Susah (jaga pasangan dan 3 kembar), Master (ngitung kartu yang belum keluar).", "Aturannya sama persis dengan versi web. Coba dulu di tingkat Mudah buat latihan."),
         practice = true
     )
 )
@@ -115,18 +115,18 @@ val TUT: List<Slide> = listOf(
 val GUIDE: List<Step> = listOf(
     Step(
         "Selamat datang",
-        "Tujuan game ini: habiskan 13 kartu di tangan lo duluan. Di tutorial ini lo latihan langkah demi langkah dengan kartu contoh. Kalau salah, nggak apa-apa, nanti dijelasin kenapa."
+        "Tujuan game ini: habiskan 13 kartu di tangan kamu duluan. Di tutorial ini kamu latihan langkah demi langkah dengan kartu contoh. Kalau salah, nggak apa-apa, nanti dijelasin kenapa."
     ),
     Step(
         "Keluarin kartu pertama",
-        "Meja kosong, jadi lo yang buka ronde dan bebas pilih. <b>Tekan kartu 5♠</b> (kartunya naik), lalu tekan <b>Mainkan</b>.",
+        "Meja kosong, jadi kamu yang buka ronde dan bebas pilih. <b>Tekan kartu 5♠</b> (kartunya naik), lalu tekan <b>Mainkan</b>.",
         hand = listOf("4♣", "5♠", "8♦", "9♥", "J♣"),
         play = listOf("5♠"),
         ok = "Mantap! 5♠ keluar sebagai tunggal (1 kartu)."
     ),
     Step(
         "Ngelawan tunggal",
-        "Bot Budi keluarin 9♦. Lo harus keluarin <b>1 kartu yang angkanya lebih tinggi dari 9</b>. Urutan: 3 4 5 6 7 8 9 10 J Q K A 2. Logo (♠ ♣ ♦ ♥) nggak dihitung.",
+        "Bot Budi keluarin 9♦. Kamu harus keluarin <b>1 kartu yang angkanya lebih tinggi dari 9</b>. Urutan: 3 4 5 6 7 8 9 10 J Q K A 2. Logo (♠ ♣ ♦ ♥) nggak dihitung.",
         hand = listOf("6♣", "8♠", "J♣", "K♦"),
         table = "Bot Budi" to listOf("9♦"),
         any = true,
@@ -164,15 +164,15 @@ val GUIDE: List<Step> = listOf(
     ),
     Step(
         "Kapan harus Lewat",
-        "Bot Budi keluarin pasangan K. Lo nggak punya pasangan sama sekali. Kalau nggak ada yang bisa ngalahin, <b>tekan Lewat</b>.",
+        "Bot Budi keluarin pasangan K. Kamu nggak punya pasangan sama sekali. Kalau nggak ada yang bisa ngalahin, <b>tekan Lewat</b>.",
         hand = listOf("3♣", "5♦", "8♠", "9♥", "J♦"),
         table = "Bot Budi" to listOf("K♠", "K♥"),
         pass = true,
-        ok = "Oke. Lewat cuma berlaku untuk giliran itu. Kalau ada yang keluarin kartu lagi, lo dapat giliran lagi. Kalau semua lewat, yang terakhir keluarin kartu buka ronde baru."
+        ok = "Oke. Lewat cuma berlaku untuk giliran itu. Kalau ada yang keluarin kartu lagi, kamu dapat giliran lagi. Kalau semua lewat, yang terakhir keluarin kartu buka ronde baru."
     ),
     Step(
         "Kartu 2",
-        "Bot Sari keluarin <b>2♣</b>. Kartu 2 paling tinggi, dan nggak bisa dibales kartu biasa (A pun nggak bisa). Cuma bom yang bisa motong. Lo nggak punya bom, jadi <b>tekan Lewat</b>.",
+        "Bot Sari keluarin <b>2♣</b>. Kartu 2 paling tinggi, dan nggak bisa dibales kartu biasa (A pun nggak bisa). Cuma bom yang bisa motong. Kamu nggak punya bom, jadi <b>tekan Lewat</b>.",
         hand = listOf("3♦", "7♠", "A♥", "K♣"),
         table = "Bot Sari" to listOf("2♣"),
         pass = true,
@@ -180,39 +180,39 @@ val GUIDE: List<Step> = listOf(
     ),
     Step(
         "Bom memotong 2",
-        "Bot Joko keluarin 2♣ lagi, tapi sekarang lo punya <b>4 kembar 5 = bom</b>. Bom bisa motong 2 tunggal. Pilih keempat 5, lalu Mainkan.",
+        "Bot Joko keluarin 2♣ lagi, tapi sekarang kamu punya <b>4 kembar 5 = bom</b>. Bom bisa motong 2 tunggal. Pilih keempat 5, lalu Mainkan.",
         hand = listOf("5♠", "5♣", "5♦", "5♥", "8♠", "K♦"),
         table = "Bot Joko" to listOf("2♣"),
         play = listOf("5♠", "5♣", "5♦", "5♥"),
-        ok = "Boom! Bom yang motong 2 bikin game langsung berakhir dan lo menang. Bom lain: seri 5 satu logo, dan bom x2 (8 kartu kembar, buat motong pasangan 22 atau 3 kembar 2)."
+        ok = "Boom! Bom yang motong 2 bikin game langsung berakhir dan kamu menang. Bom lain: seri 5 satu logo, dan bom x2 (8 kartu kembar, buat motong pasangan 22 atau 3 kembar 2)."
     ),
     Step(
         "Bom seri",
-        "Seri biasa (3 atau 4 kartu) cuma kombinasi biasa. Tapi kalau seri-nya <b>5 kartu atau lebih dan satu logo</b>, itu otomatis <b>bom seri</b> (angka 3 sampai 10, boleh ditambah 1 pasangan). Bot Budi keluarin 2♣. Lo punya seri 6 sampai 10 satu logo hati. Pilih kelima kartu itu (bukan 6♠), lalu Mainkan.",
+        "Seri biasa (3 atau 4 kartu) cuma kombinasi biasa. Tapi kalau seri-nya <b>5 kartu atau lebih dan satu logo</b>, itu otomatis <b>bom seri</b> (angka 3 sampai 10, boleh ditambah 1 pasangan). Bot Budi keluarin 2♣. Kamu punya seri 6 sampai 10 satu logo hati. Pilih kelima kartu itu (bukan 6♠), lalu Mainkan.",
         hand = listOf("6♥", "7♥", "8♥", "9♥", "10♥", "6♠", "J♦"),
         table = "Bot Budi" to listOf("2♣"),
         play = listOf("6♥", "7♥", "8♥", "9♥", "10♥"),
-        ok = "Boom! Bom seri motong 2 tunggal dan lo langsung menang, sama seperti 4 kembar. Kalau seri-nya beda logo, itu bukan bom dan nggak bisa motong 2."
+        ok = "Boom! Bom seri motong 2 tunggal dan kamu langsung menang, sama seperti 4 kembar. Kalau seri-nya beda logo, itu bukan bom dan nggak bisa motong 2."
     ),
     Step(
         "Jangan habisin pakai 2",
-        "Sekarang kartu lo tinggal satu: <b>2♠</b>. Coba keluarin 2♠ dan lihat apa yang terjadi.",
+        "Sekarang kartu kamu tinggal satu: <b>2♠</b>. Coba keluarin 2♠ dan lihat apa yang terjadi.",
         hand = listOf("2♠"),
         play = listOf("2♠"),
         bad = true,
-        ok = "Lo kalah! Kalau kartu terakhir (yang bikin kartu habis) mengandung kartu 2, itu namanya ngebom diri sendiri: game dibatalkan dan nggak ada pemenang. Keluarin 2 selagi masih ada kartu lain, atau simpan buat nahan lawan."
+        ok = "Kamu kalah! Kalau kartu terakhir (yang bikin kartu habis) mengandung kartu 2, itu namanya ngebom diri sendiri: game dibatalkan dan nggak ada pemenang. Keluarin 2 selagi masih ada kartu lain, atau simpan buat nahan lawan."
     ),
     Step(
         "Awal game: kumpulin 3",
-        "Game pertama (atau setelah game batal) mulai dengan <b>fase kumpulin 3</b>: semua pemain yang punya angka 3 keluarin semua kartu 3-nya sekaligus. Setelah itu, yang keluarin 3♠ jalan duluan. Kalau lo dapat 4 kartu 2 di awal, lo kalah instan dan game diulang."
+        "Game pertama (atau setelah game batal) mulai dengan <b>fase kumpulin 3</b>: semua pemain yang punya angka 3 keluarin semua kartu 3-nya sekaligus. Setelah itu, yang keluarin 3♠ jalan duluan. Kalau kamu dapat 4 kartu 2 di awal, kamu kalah instan dan game diulang."
     ),
     Step(
         "Kartu murni dan juara",
-        "Kalau lo nggak dapat J, Q, K sama sekali (<b>kartu murni</b>), lo bisa pilih Berhenti: langsung jadi juara berikutnya dan game tetap lanjut. Pemain lain harus ngabisin kartunya beneran. Juara terakhir adalah yang masih punya sisa kartu."
+        "Kalau kamu nggak dapat J, Q, K sama sekali (<b>kartu murni</b>), kamu bisa pilih Berhenti: langsung jadi juara berikutnya dan game tetap lanjut. Pemain lain harus ngabisin kartunya beneran. Juara terakhir adalah yang masih punya sisa kartu."
     ),
     Step(
         "Selesai!",
-        "Lo udah tahu semua dasarnya. Tips: kartu di tangan nggak diurutin otomatis. Tekan <b>Kelompokkan</b> buat merapikan, atau tahan lalu geser. Kalau lupa aturan, buka lagi menu <b>Tutorial</b> di layar depan.",
+        "Kamu udah tahu semua dasarnya. Tips: kartu di tangan nggak diurutin otomatis. Tekan <b>Kelompokkan</b> buat merapikan, atau tahan lalu geser. Kalau lupa aturan, buka lagi menu <b>Tutorial</b> di layar depan.",
         done = true
     )
 )

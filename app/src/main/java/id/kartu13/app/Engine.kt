@@ -478,10 +478,10 @@ fun why(g: Game, me: Int, cards: List<Int>): String {
     val hand = g.hands[me]
     val last = g.last
     val e = ev(cards)
-    if (!cards.all { hand.contains(it) }) return "Kartu itu nggak ada di tangan lo."
+    if (!cards.all { hand.contains(it) }) return "Kartu itu nggak ada di tangan kamu."
     if (g.first) {
         val m3 = hand.filter { rk(it) == 0 }
-        return if (cards.size == m3.size && m3.all { cards.contains(it) }) "" else "Fase kumpulin 3: keluarin semua kartu 3 lo sekaligus (" + m3.size + " kartu)."
+        return if (cards.size == m3.size && m3.all { cards.contains(it) }) "" else "Fase kumpulin 3: keluarin semua kartu 3 kamu sekaligus (" + m3.size + " kartu)."
     }
     if (e == null) {
         return if (cards.size > 2) "Bukan kombinasi valid. Seri harus satu logo semua (3+ kartu berurutan, tanpa 2). Lainnya: pasangan, 3 kembar, 3 kembar + pasangan, seri + pasangan." else "Dua kartu harus angka sama (pasangan)."

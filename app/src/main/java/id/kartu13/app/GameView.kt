@@ -404,11 +404,11 @@ class GameView(ctx: Context) : View(ctx) {
             "gk" -> gPlay(GUIDE[gI])
             "gp" -> {
                 val d0 = GUIDE[gI]
-                if (d0.pass) gWin(d0) else gSay("Di latihan ini lo punya kartu yang bisa keluar. Coba pilih kartunya dulu.", true)
+                if (d0.pass) gWin(d0) else gSay("Di latihan ini kamu punya kartu yang bisa keluar. Coba pilih kartunya dulu.", true)
             }
             "gi" -> {
                 gHint = true
-                gSay(if (GUIDE[gI].pass) "Petunjuk: di sini lo harus tekan Lewat." else "Petunjuk: kartu yang bercahaya hijau. Pilih, lalu Mainkan.", false)
+                gSay(if (GUIDE[gI].pass) "Petunjuk: di sini kamu harus tekan Lewat." else "Petunjuk: kartu yang bercahaya hijau. Pilih, lalu Mainkan.", false)
             }
             "gn" -> { gI = min(GUIDE.size - 1, gI + 1); gStep() }
             "gm" -> { lv = 0; startGame(null) }
@@ -962,7 +962,7 @@ class GameView(ctx: Context) : View(ctx) {
         val scrollLp = LinearLayout.LayoutParams(-1, d(220f).toInt()).apply { topMargin = d(8f).toInt() }
         root.addView(scroll, scrollLp)
         val quick = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
-        val quickTexts = listOf("Gas terus! 🔥", "GG! 👏", "Yah kasian 😅", "Kartu lo jelek banget! 😂")
+        val quickTexts = listOf("Gas terus! 🔥", "GG! 👏", "Yah kasian 😅", "Kartu kamu jelek banget! 😂")
         val input = EditText(context).apply { hint = "Tulis pesan…"; setTextColor(INK); setHintTextColor(MUTE); textSize = 14f; filters = arrayOf(InputFilter.LengthFilter(140)); setSingleLine(true) }
         val send = TextView(context).apply { text = "KIRIM"; textSize = 13f; setTextColor(GOLD); gravity = Gravity.CENTER; setTypeface(typeface, Typeface.BOLD); setPadding(d(12f).toInt(), 0, d(12f).toInt(), 0) }
         val inputRow = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; addView(input, LinearLayout.LayoutParams(0, d(48f).toInt(), 1f)); addView(send, LinearLayout.LayoutParams(d(68f).toInt(), d(48f).toInt())) }
@@ -1348,7 +1348,7 @@ class GameView(ctx: Context) : View(ctx) {
         val last = if (lc != null && le != null) Last(-1, lc, le.t, le.n, le.k, le.k2) else null
         if (e == null) { gSay("Itu bukan kombinasi yang sah. Kombinasi yang boleh: tunggal, pasangan, 3 kembar, seri satu logo, dan yang pakai pasangan.", true); return }
         if (last != null && !(cuts(e, last) || beats(e, last))) {
-            gSay(if (d0.pass) "Nggak ada kartu lo yang bisa ngalahin meja. Tekan Lewat." else "Nggak bisa: harus sejenis, jumlah kartunya sama, dan angkanya lebih tinggi dari meja.", true)
+            gSay(if (d0.pass) "Nggak ada kartu kamu yang bisa ngalahin meja. Tekan Lewat." else "Nggak bisa: harus sejenis, jumlah kartunya sama, dan angkanya lebih tinggi dari meja.", true)
             return
         }
         if (d0.pass) { gSay("Sebenarnya sah, tapi di latihan ini tekan Lewat.", true); return }
@@ -1376,10 +1376,10 @@ class GameView(ctx: Context) : View(ctx) {
             if (tb != null) {
                 y += cardBox(c, "Meja: " + tb.first + " keluarin", tb.second.map { cid(it) }, x, y, iw, cw, step, 0f, dr) + d(8f)
             } else if (d0.act) {
-                y += cardBox(c, "Meja kosong: lo yang buka ronde", emptyList(), x, y, iw, cw, step, 0f, dr) + d(8f)
+                y += cardBox(c, "Meja kosong: kamu yang buka ronde", emptyList(), x, y, iw, cw, step, 0f, dr) + d(8f)
             }
             if (d0.hand.isNotEmpty()) {
-                y += cardBox(c, "Kartu lo (tekan buat milih)", gHand, x, y, iw, cw, step, d(12f), dr, true,
+                y += cardBox(c, "Kartu kamu (tekan buat milih)", gHand, x, y, iw, cw, step, d(12f), dr, true,
                     gSel, if (gHint) need else emptyList()) + d(8f)
             }
             val mh = if (gMsg.isNotEmpty()) para(c, html("<b>" + gMsg + "</b>"), x, y, iw.toInt(), d(15f), if (gBad) BADC else OKC, NORM, dr, 1.3f) else 0f
@@ -1559,13 +1559,13 @@ class GameView(ctx: Context) : View(ctx) {
                     }
                 }
             }
-            val who = if (myTurn) "Giliran lo!" else if (pend) "Nunggu pilihan kartu murni" else "Giliran " + playerName(cur)
+            val who = if (myTurn) "Giliran kamu!" else if (pend) "Nunggu pilihan kartu murni" else "Giliran " + playerName(cur)
             txt(c, who, tr.centerX(), tr.bottom - d(14f), d(14f), if (myTurn) GOLD else MUTE, Paint.Align.CENTER, myTurn)
         }
 
         // pesan
         val note = if (msg.isNotEmpty()) msg
-        else if (myTurn) (if (g.first) "Kartu 3 lo sudah kepilih. Tekan Mainkan." else "Pilih kartu lalu tekan Mainkan.")
+        else if (myTurn) (if (g.first) "Kartu 3 kamu sudah kepilih. Tekan Mainkan." else "Pilih kartu lalu tekan Mainkan.")
         else ""
         if (note.isNotEmpty()) {
             para(c, note, l + m, tableBottom + d(6f), (w - 2 * m).toInt(), d(13f), if (msg.isNotEmpty()) WARN else MUTE, Layout.Alignment.ALIGN_CENTER)
