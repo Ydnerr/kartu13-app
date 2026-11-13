@@ -3,7 +3,7 @@
 Port native Kotlin dari game web "Kartu 13 / Poker 13". Tanpa WebView, tanpa library pihak ketiga.
 
 ## Status
-Tahap 1, 2, dan 2.5 selesai. Sisanya di roadmap di bawah. Acuan fitur: web `index.html` + `game.js` v44.11 (tanda ✅ = sudah ada di app Android, ⬜ = belum).
+Tahap 1, 2, 2.5, dan 2.6 selesai. Sisanya di roadmap di bawah. Acuan fitur: web `index.html` + `game.js` v44.11 (tanda ✅ = sudah ada di app Android, ⬜ = belum).
 
 Prinsip: tanpa WebView, dan sebisa mungkin tanpa library pihak ketiga. Setiap tahap harus bisa di-build dan dimainkan sendiri sebelum lanjut ke tahap berikutnya.
 
@@ -30,11 +30,14 @@ Prinsip: tanpa WebView, dan sebisa mungkin tanpa library pihak ketiga. Setiap ta
 - ✅ Notif "Rapikan kartu dulu" 30 detik di awal game (`arnShow`)
 - ✅ Getar tipis saat giliran kamu (`turnBuzz`, izin `VIBRATE`)
 - ✅ Opsi "Kartu: besar / normal" di menu depan (`tb`)
+- ✅ Latar pakai cover SVG (`res/drawable/bg_cover_portrait.xml` dan `bg_cover_landscape.xml`, hasil konversi dari `cover/*.svg`), digelapkan lewat gradasi + vignette di `GameView.onSizeChanged`
+- ✅ Kartu tersisa (gambar punggung + "x N") di kursi lawan dihapus, kursi jadi lebih pendek
 
-### ⬜ Tahap 2.6: tutorial
-- ⬜ Tutorial geser dengan contoh kartu asli (`TUT`)
-- ⬜ Tutorial terpandu: latihan langkah demi langkah, kombinasi dicek pakai mesin aturan (`GUIDE`, `gStep`, `gPlay`)
-- ⬜ Menu tutorial: pilih terpandu atau baca aturan (`openTut`)
+### ✅ Tahap 2.6: tutorial
+- ✅ Tutorial geser dengan contoh kartu asli (`TUT`, 14 halaman, bisa digeser kiri / kanan atau pakai tombol)
+- ✅ Tutorial terpandu: 15 latihan langkah demi langkah, kombinasi dicek pakai mesin aturan asli (`GUIDE`, `gStep`, `gPlay`)
+- ✅ Menu tutorial: pilih terpandu, aturan geser, atau ringkasan teks (`openTut`); tombol "Aturan main" di layar depan jadi "Tutorial"
+- ✅ Teks tutorial disesuaikan buat Android (tombol Mainkan, tanpa petunjuk keyboard PC). Isi ada di `Tutorial.kt`
 
 ### ⬜ Tahap 3: multiplayer Firebase (2 sampai 4 pemain)
 Dipecah supaya bisa dirilis bertahap.

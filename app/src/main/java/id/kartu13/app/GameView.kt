@@ -11,6 +11,7 @@ import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
 import android.os.Build
+import android.text.Html
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -53,7 +54,7 @@ private val RULES = arrayOf(
 )
 
 class GameView(ctx: Context) : View(ctx) {
-    private enum class Screen { HOME, GAME, RULES }
+    private enum class Screen { HOME, GAME, RULES, TUTMENU, TUTSLIDE, GUIDE }
 
     private class Hit(val r: RectF, val id: String, val idx: Int)
 
@@ -69,9 +70,21 @@ class GameView(ctx: Context) : View(ctx) {
     private var msg = ""
     private val hits = ArrayList<Hit>()
     private val cache = HashMap<Int, Bitmap?>()
-    private var bg: Paint? = null
+    private var bgBmp: Bitmap? = null
     private var rulesScroll = 0f
     private var rulesMax = 0f
+
+    // ---- tahap 2.6: tutorial (geser + terpandu)
+    private var tutI = 0
+    private var tutScroll = 0f
+    private var tutMax = 0f
+    private var gI = 0
+    private val gSel = ArrayList<Int>()
+    private var gHand = ArrayList<Int>()
+    private var gOK = false
+    private var gHint = false
+    private var gMsg = ""
+    private var gBad = false
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val tp = TextPaint(Paint.ANTI_ALIAS_FLAG)
     private val botTask = Runnable { botStep() }
@@ -311,7 +324,8 @@ class GameView(ctx: Context) : View(ctx) {
     fun onBack(): Boolean {
         if (screen == Screen.HOME) return false
         handler.removeCallbacks(botTask)
-        screen = Screen.HOME
+        screen = if (screen == Screen.TUTSLIDE || screen == Screen.GUIDE) Screen.TUTMENU else Screen.HOME
+        tutScroll = 0f
         invalidate()
         return true
     }
@@ -322,6 +336,30 @@ class GameView(ctx: Context) : View(ctx) {
             "lv" -> { lv = h.idx; prefs.edit().putInt("lv", lv).apply() }
             "start" -> startGame(null)
             "rules" -> { screen = Screen.RULES; rulesScroll = 0f }
+            "tut" -> screen = Screen.TUTMENU
+            "ts" -> { tutI = 0; tutScroll = 0f; screen = Screen.TUTSLIDE }
+            "tg" -> { gI = 0; gStep(); screen = Screen.GUIDE }
+            "tprev" -> { tutI = max(0, tutI - 1); tutScroll = 0f }
+            "tnext" -> { tutI = min(TUT.size - 1, tutI + 1); tutScroll = 0f }
+            "tclose" -> { screen = Screen.HOME; tutScroll = 0f }
+            "tprac" -> { lv = 0; startGame(null) }
+            "gc" -> if (!gOK) {
+                val up = !gSel.contains(h.idx)
+                snd.tick(up)
+                if (up) gSel.add(h.idx) else gSel.remove(h.idx)
+                gMsg = ""
+            }
+            "gk" -> gPlay(GUIDE[gI])
+            "gp" -> {
+                val d0 = GUIDE[gI]
+                if (d0.pass) gWin(d0) else gSay("Di latihan ini lo punya kartu yang bisa keluar. Coba pilih kartunya dulu.", true)
+            }
+            "gi" -> {
+                gHint = true
+                gSay(if (GUIDE[gI].pass) "Petunjuk: di sini lo harus tekan Lewat." else "Petunjuk: kartu yang bercahaya hijau. Pilih, lalu Mainkan.", false)
+            }
+            "gn" -> { gI = min(GUIDE.size - 1, gI + 1); gStep() }
+            "gm" -> { lv = 0; startGame(null) }
             "back", "menu" -> { handler.removeCallbacks(botTask); screen = Screen.HOME }
             "again" -> startGame(nextLead())
             "card" -> {
@@ -368,6 +406,10 @@ class GameView(ctx: Context) : View(ctx) {
                     rulesScroll = (rulesScroll - (e.y - lastY)).coerceIn(0f, max(0f, rulesMax))
                     lastY = e.y
                     invalidate()
+                } else if (screen == Screen.TUTSLIDE || screen == Screen.GUIDE) {
+                    tutScroll = (tutScroll - (e.y - lastY)).coerceIn(0f, max(0f, tutMax))
+                    lastY = e.y
+                    invalidate()
                 }
                 if (abs(e.x - downX) > d(12f) || abs(e.y - downY) > d(12f)) {
                     moved = true
@@ -381,6 +423,16 @@ class GameView(ctx: Context) : View(ctx) {
                     arnDone = true
                     invalidate()
                     return true
+                }
+                if (screen == Screen.TUTSLIDE) { // geser kiri / kanan ganti halaman
+                    val dx = e.x - downX
+                    val dy = e.y - downY
+                    if (abs(dx) > d(70f) && abs(dx) > abs(dy) * 1.5f) {
+                        tutI = (tutI + (if (dx < 0) 1 else -1)).coerceIn(0, TUT.size - 1)
+                        tutScroll = 0f
+                        invalidate()
+                        return true
+                    }
                 }
                 if (!moved) {
                     for (h in hits.reversed()) {
@@ -400,15 +452,45 @@ class GameView(ctx: Context) : View(ctx) {
     }
 
     // ---------------------------------------------------------------- gambar dasar
+    // latar: gradasi hijau (digelapkan) + pola logo & bingkai dari cover SVG (res/drawable/bg_cover_*.xml).
+    // Digambar sekali ke bitmap supaya onDraw tetap ringan.
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
-        val p = Paint()
-        p.shader = RadialGradient(
-            w * 0.5f, h * 0.4f, max(w, h) * 0.75f,
-            intArrayOf(Color.parseColor("#23765a"), Color.parseColor("#15493a"), Color.parseColor("#071a14")),
-            floatArrayOf(0f, 0.45f, 1f), Shader.TileMode.CLAMP
-        )
-        bg = p
+        bgBmp = null
+        if (w <= 0 || h <= 0) return
+        try {
+            val bm = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            val cv = Canvas(bm)
+            val p = Paint()
+            p.shader = RadialGradient(
+                w * 0.5f, h * 0.4f, max(w, h) * 0.75f,
+                intArrayOf(Color.parseColor("#154534"), Color.parseColor("#0c2b22"), Color.parseColor("#030c09")),
+                floatArrayOf(0f, 0.45f, 1f), Shader.TileMode.CLAMP
+            )
+            cv.drawRect(0f, 0f, w.toFloat(), h.toFloat(), p)
+            val dr = context.getDrawable(if (h >= w) R.drawable.bg_cover_portrait else R.drawable.bg_cover_landscape)
+            if (dr != null) {
+                val vw = if (h >= w) 600f else 1900f
+                val vh = if (h >= w) 1900f else 600f
+                val k = max(w / vw, h / vh) // "slice": menutup penuh, bagian lebih dipotong
+                cv.save()
+                cv.translate((w - vw * k) / 2f, (h - vh * k) / 2f)
+                cv.scale(k, k)
+                dr.setBounds(0, 0, vw.toInt(), vh.toInt())
+                dr.draw(cv)
+                cv.restore()
+            }
+            val v = Paint()
+            v.shader = RadialGradient(
+                w * 0.5f, h * 0.5f, max(w, h) * 0.72f,
+                intArrayOf(Color.TRANSPARENT, Color.argb(140, 0, 0, 0)),
+                floatArrayOf(0.55f, 1f), Shader.TileMode.CLAMP
+            )
+            cv.drawRect(0f, 0f, w.toFloat(), h.toFloat(), v)
+            bgBmp = bm
+        } catch (_: Throwable) {
+            bgBmp = null
+        }
     }
 
     private fun bmp(id: Int): Bitmap? {
@@ -436,7 +518,7 @@ class GameView(ctx: Context) : View(ctx) {
         c.drawText(s, x, y, tp)
     }
 
-    private fun para(c: Canvas, s: String, x: Float, y: Float, width: Int, size: Float, color: Int,
+    private fun para(c: Canvas, s: CharSequence, x: Float, y: Float, width: Int, size: Float, color: Int,
                      align: Layout.Alignment): Float {
         tp.reset()
         tp.isAntiAlias = true
@@ -497,7 +579,8 @@ class GameView(ctx: Context) : View(ctx) {
         lastT = now
         anim = false
         slow = false
-        bg?.let { c.drawRect(0f, 0f, width.toFloat(), height.toFloat(), it) }
+        val bb = bgBmp
+        if (bb != null) c.drawBitmap(bb, 0f, 0f, null) else c.drawColor(Color.parseColor("#0c2b22"))
         val l = paddingLeft.toFloat()
         val t = paddingTop.toFloat()
         val w = (width - paddingLeft - paddingRight).toFloat()
@@ -518,6 +601,9 @@ class GameView(ctx: Context) : View(ctx) {
                 drawBoomFx(c, w, b)
             }
             Screen.RULES -> drawRules(c, l, t, w, b)
+            Screen.TUTMENU -> drawTutMenu(c, l, t, w, b)
+            Screen.TUTSLIDE -> drawTutSlide(c, l, t, w, b)
+            Screen.GUIDE -> drawGuide(c, l, t, w, b)
         }
         if (anim) postInvalidateOnAnimation() else if (slow) postInvalidateDelayed(250L)
     }
@@ -584,7 +670,7 @@ class GameView(ctx: Context) : View(ctx) {
         val ww = min(w - 2 * m, d(340f))
         button(c, RectF(cx - ww / 2, y, cx + ww / 2, y + d(56f)), "Main lawan bot", "start", true, false)
         y += d(56f) + d(12f)
-        button(c, RectF(cx - ww / 2, y, cx + ww / 2, y + d(48f)), "Aturan main", "rules", true, true)
+        button(c, RectF(cx - ww / 2, y, cx + ww / 2, y + d(48f)), "Tutorial", "tut", true, true)
         y += d(48f) + d(12f)
         val tg = d(6f)
         val tw = (ww - 2 * tg) / 3
@@ -614,6 +700,190 @@ class GameView(ctx: Context) : View(ctx) {
         button(c, RectF(l + m, b - d(62f), l + w - m, b - d(14f)), "Kembali", "back", true, false)
     }
 
+    // ---------------------------------------------------------------- tahap 2.6: tutorial
+    private fun html(s: String): CharSequence = Html.fromHtml(s, Html.FROM_HTML_MODE_COMPACT)
+
+    // deretan kartu agak bertumpuk, rata tengah di cx; mengembalikan tinggi kartu
+    private fun cardRow(c: Canvas, ids: List<Int>, cx: Float, y: Float, cw: Float, availW: Float): Float {
+        val ch = cw / CARD_RATIO
+        val n = ids.size
+        val step = if (n > 1) min(cw * 0.92f, (availW - cw) / (n - 1)) else 0f
+        var x = cx - (cw + step * (n - 1)) / 2
+        for (id in ids) {
+            drawCard(c, id, RectF(x, y, x + cw, y + ch))
+            x += step
+        }
+        return ch
+    }
+
+    private fun drawTutMenu(c: Canvas, l: Float, t: Float, w: Float, b: Float) {
+        val cx = l + w / 2
+        val ww = min(w - d(40f), d(340f))
+        var y = t + (b - t) * 0.16f
+        txt(c, "Tutorial", cx, y, d(30f), GOLD, Paint.Align.CENTER, true)
+        y += d(30f)
+        txt(c, "Pilih cara belajarnya:", cx, y, d(15f), MUTE)
+        y += d(26f)
+        button(c, RectF(cx - ww / 2, y, cx + ww / 2, y + d(56f)), "Tutorial terpandu (latihan langsung)", "tg", true, false, -1, 14f)
+        y += d(56f) + d(12f)
+        button(c, RectF(cx - ww / 2, y, cx + ww / 2, y + d(48f)), "Baca aturan lengkap (geser)", "ts", true, true)
+        y += d(48f) + d(12f)
+        button(c, RectF(cx - ww / 2, y, cx + ww / 2, y + d(48f)), "Ringkasan aturan (teks)", "rules", true, true)
+        y += d(48f) + d(12f)
+        button(c, RectF(cx - ww / 2, y, cx + ww / 2, y + d(44f)), "Kembali", "tclose", true, true)
+    }
+
+    private fun drawTutSlide(c: Canvas, l: Float, t: Float, w: Float, b: Float) {
+        val i = tutI.coerceIn(0, TUT.size - 1)
+        val s = TUT[i]
+        val m = d(18f)
+        val tw = (w - 2 * m).toInt()
+        val th = para(c, html("<b>" + (i + 1) + "/" + TUT.size + " · " + s.h + "</b>"), l + m, t + d(14f), tw, d(19f), GOLD, Layout.Alignment.ALIGN_CENTER)
+        val bodyTop = t + d(14f) + th + d(10f)
+        val closeR = RectF(l + m, b - d(52f), l + w - m, b - d(12f))
+        val navTop = b - d(108f)
+        val bodyBottom = navTop - d(8f)
+        c.save()
+        c.clipRect(l, bodyTop, l + w, bodyBottom)
+        var y = bodyTop - tutScroll
+        for (p in s.p) y += para(c, html(p), l + m, y, tw, d(15f), INK, Layout.Alignment.ALIGN_NORMAL) + d(8f)
+        for ((label, cs) in s.ex) {
+            y += d(4f)
+            y += para(c, label, l + m, y, tw, d(13f), GOLD, Layout.Alignment.ALIGN_NORMAL) + d(4f)
+            y += cardRow(c, cs.map { cid(it) }, l + w / 2, y, d(46f), w - 2 * m) + d(10f)
+        }
+        for (p in s.p2) y += para(c, html(p), l + m, y, tw, d(15f), INK, Layout.Alignment.ALIGN_NORMAL) + d(8f)
+        c.restore()
+        tutMax = (y + tutScroll) - bodyBottom
+        val last = i == TUT.size - 1
+        val gap = d(8f)
+        val bw = (w - 2 * m - gap) / 2
+        button(c, RectF(l + m, navTop, l + m + bw, navTop + d(48f)), "Sebelumnya", "tprev", i > 0, true)
+        if (last && s.practice) button(c, RectF(l + m + bw + gap, navTop, l + w - m, navTop + d(48f)), "Latihan vs bot", "tprac", true, false)
+        else if (last) button(c, RectF(l + m + bw + gap, navTop, l + w - m, navTop + d(48f)), "Tutup", "tclose", true, false)
+        else button(c, RectF(l + m + bw + gap, navTop, l + w - m, navTop + d(48f)), "Berikutnya", "tnext", true, false)
+        button(c, closeR, "Tutup tutorial", "tclose", true, true, -1, 13f)
+        if (!last) txt(c, "geser kiri / kanan juga bisa", l + w / 2, navTop - d(2f) - d(0f), d(10f), MUTE)
+    }
+
+    private fun gStep() {
+        val d0 = GUIDE[gI]
+        gSel.clear()
+        gOK = false
+        gHint = false
+        gHand = ArrayList(d0.hand.map { cid(it) })
+        gMsg = ""
+        gBad = false
+        tutScroll = 0f
+    }
+
+    private fun gSay(s: String, bad: Boolean) {
+        gMsg = s
+        gBad = bad
+    }
+
+    private fun gWin(d0: Step) {
+        gOK = true
+        if (d0.play.isNotEmpty() || d0.any) gHand.removeAll(gSel.toSet())
+        gSel.clear()
+        gMsg = d0.ok
+        gBad = d0.bad
+    }
+
+    // kombinasi dicek pakai mesin aturan asli (ev, beats, cuts)
+    private fun gPlay(d0: Step) {
+        val ids = gSel.sorted()
+        if (ids.isEmpty()) { gSay("Pilih kartunya dulu, lalu tekan Mainkan.", true); return }
+        val e = ev(ids)
+        val lc = d0.table?.second?.map { cid(it) }
+        val le = if (lc != null) ev(lc) else null
+        val last = if (lc != null && le != null) Last(-1, lc, le.t, le.n, le.k, le.k2) else null
+        if (e == null) { gSay("Itu bukan kombinasi yang sah. Kombinasi yang boleh: tunggal, pasangan, 3 kembar, seri satu logo, dan yang pakai pasangan.", true); return }
+        if (last != null && !(cuts(e, last) || beats(e, last))) {
+            gSay(if (d0.pass) "Nggak ada kartu lo yang bisa ngalahin meja. Tekan Lewat." else "Nggak bisa: harus sejenis, jumlah kartunya sama, dan angkanya lebih tinggi dari meja.", true)
+            return
+        }
+        if (d0.pass) { gSay("Sebenarnya sah, tapi di latihan ini tekan Lewat.", true); return }
+        if (d0.play.isNotEmpty()) {
+            val need = d0.play.map { cid(it) }.sorted()
+            if (need != ids) { gSay("Kombinasinya sah, tapi di latihan ini coba keluarin: " + d0.play.joinToString(" ") + ".", true); return }
+        }
+        gWin(d0)
+    }
+
+    private fun drawGuide(c: Canvas, l: Float, t: Float, w: Float, b: Float) {
+        val d0 = GUIDE[gI.coerceIn(0, GUIDE.size - 1)]
+        val n = GUIDE.size
+        val m = d(16f)
+        val tw = (w - 2 * m).toInt()
+        val th = para(c, html("<b>Latihan " + (gI + 1) + "/" + n + " · " + d0.h + "</b>"), l + m, t + d(14f), tw, d(18f), GOLD, Layout.Alignment.ALIGN_CENTER)
+        val bodyTop = t + d(14f) + th + d(10f)
+        val closeR = RectF(l + m, b - d(52f), l + w - m, b - d(12f))
+        val actTop = b - d(108f)
+        val bodyBottom = actTop - d(8f)
+        val need = d0.play.map { cid(it) }
+        c.save()
+        c.clipRect(l, bodyTop, l + w, bodyBottom)
+        var y = bodyTop - tutScroll
+        y += para(c, html(d0.t), l + m, y, tw, d(15f), INK, Layout.Alignment.ALIGN_NORMAL) + d(12f)
+        val tb = d0.table
+        if (tb != null) {
+            y += para(c, "Meja: " + tb.first + " keluarin", l + m, y, tw, d(13f), GOLD, Layout.Alignment.ALIGN_NORMAL) + d(4f)
+            y += cardRow(c, tb.second.map { cid(it) }, l + w / 2, y, d(46f), w - 2 * m) + d(12f)
+        } else if (d0.act) {
+            y += para(c, "Meja kosong: lo yang buka ronde", l + m, y, tw, d(13f), GOLD, Layout.Alignment.ALIGN_NORMAL) + d(12f)
+        }
+        if (gHand.isNotEmpty() || d0.hand.isNotEmpty()) {
+            y += para(c, "Kartu lo (tekan buat milih)", l + m, y, tw, d(13f), GOLD, Layout.Alignment.ALIGN_NORMAL) + d(6f)
+            val cnt = gHand.size
+            if (cnt > 0) {
+                val cw = min(d(58f), (w - 2 * m) / 4.2f)
+                val ch = cw / CARD_RATIO
+                val raise = ch * 0.2f
+                val step = if (cnt > 1) min(cw * 1.04f, (w - 2 * m - cw) / (cnt - 1)) else 0f
+                var x = l + w / 2 - (cw + step * (cnt - 1)) / 2
+                for (k in 0 until cnt) {
+                    val id = gHand[k]
+                    val sel = gSel.contains(id)
+                    val top = y + raise - (if (sel) raise else 0f)
+                    val r = RectF(x, top, x + cw, top + ch)
+                    drawCard(c, id, r)
+                    if (sel || (gHint && need.contains(id))) {
+                        paint.style = Paint.Style.STROKE
+                        paint.strokeWidth = d(3f)
+                        paint.color = if (sel) GOLD else Color.parseColor("#4cd08a")
+                        c.drawRoundRect(r, cw * 0.055f, cw * 0.055f, paint)
+                        paint.style = Paint.Style.FILL
+                    }
+                    val hr = RectF(x, top, x + (if (k == cnt - 1) cw else step), top + ch)
+                    if (hr.top >= bodyTop && hr.bottom <= bodyBottom) hits.add(Hit(hr, "gc", id))
+                    x += step
+                }
+                y += raise + ch + d(12f)
+            } else {
+                y += d(8f)
+            }
+        }
+        if (gMsg.isNotEmpty()) {
+            y += para(c, gMsg, l + m, y, tw, d(14f), if (gBad) WARN else Color.parseColor("#8fe3a8"), Layout.Alignment.ALIGN_NORMAL) + d(8f)
+        }
+        c.restore()
+        tutMax = (y + tutScroll) - bodyBottom
+        val gap = d(8f)
+        val last = gI == n - 1
+        if (d0.done) {
+            button(c, RectF(l + m, actTop, l + w - m, actTop + d(48f)), "Main lawan bot Mudah", "gm", true, false)
+        } else if (d0.act && !gOK) {
+            val bw = (w - 2 * m - 2 * gap) / 3
+            button(c, RectF(l + m, actTop, l + m + bw, actTop + d(48f)), "Mainkan", "gk", true, false, -1, 13f)
+            button(c, RectF(l + m + bw + gap, actTop, l + m + 2 * bw + gap, actTop + d(48f)), "Lewat", "gp", true, true, -1, 13f)
+            button(c, RectF(l + m + 2 * (bw + gap), actTop, l + w - m, actTop + d(48f)), "Petunjuk", "gi", true, true, -1, 13f)
+        } else if (!last) {
+            button(c, RectF(l + m, actTop, l + w - m, actTop + d(48f)), "Lanjut", "gn", true, false)
+        }
+        button(c, closeR, "Tutup tutorial", "tclose", true, true, -1, 13f)
+    }
+
     private fun drawGame(c: Canvas, l: Float, t: Float, w: Float, b: Float) {
         val g = game ?: return
         val m = d(10f)
@@ -634,7 +904,7 @@ class GameView(ctx: Context) : View(ctx) {
         // lawan: pemain berikutnya ada di paling kanan
         val gap = d(8f)
         val ow = (w - 2 * m - 2 * gap) / 3
-        val oh = d(88f)
+        val oh = d(58f)
         val seats = intArrayOf(3, 2, 1)
         for (k in seats.indices) {
             val p = seats[k]
@@ -652,10 +922,6 @@ class GameView(ctx: Context) : View(ctx) {
             else if (g.dec.contains(p)) "murni, milih..."
             else ""
             txt(c, st, r.centerX(), r.top + d(38f), d(12f), MUTE)
-            val bw = d(22f)
-            val bx = r.centerX() - d(30f)
-            drawCard(c, -1, RectF(bx, r.top + d(46f), bx + bw, r.top + d(46f) + bw / CARD_RATIO))
-            txt(c, "x " + g.hands[p].size, r.centerX() - d(2f), r.top + d(70f), d(15f), tc, Paint.Align.LEFT, true)
         }
 
         // ukuran tangan & posisi tombol
