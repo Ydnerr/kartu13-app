@@ -55,6 +55,8 @@ class GameView(ctx: Context) : View(ctx) {
     private val dp = resources.displayMetrics.density
     private val handler = Handler(Looper.getMainLooper())
     private val prefs = ctx.getSharedPreferences("k13", Context.MODE_PRIVATE)
+    private val snd = Snd(ctx)
+    private var lastLog = 0
     private var screen = Screen.HOME
     private var lv = prefs.getInt("lv", 1).coerceIn(0, 3)
     private var game: Game? = null
@@ -83,6 +85,7 @@ class GameView(ctx: Context) : View(ctx) {
     private fun startGame(lead: Int?) {
         handler.removeCallbacks(botTask)
         game = deal(listOf(0, 1, 2, 3), lead)
+        lastLog = game?.log?.size ?: 0
         sel.clear()
         msg = ""
         screen = Screen.GAME
@@ -97,6 +100,7 @@ class GameView(ctx: Context) : View(ctx) {
     private fun afterMove() {
         val g = game
         if (g != null) {
+            playSfx(g)
             sel.retainAll(g.hands[0].toSet())
             if (g.first && !g.over && g.dec.isEmpty() && g.order[g.turn] == 0 && !g.fin.contains(0)) {
                 sel.clear()
@@ -158,8 +162,31 @@ class GameView(ctx: Context) : View(ctx) {
         afterMove()
     }
 
+    // efek suara buat kartu yang baru keluar (log bisa nambah >1 entri, mis. mainkan + "juara")
+    private fun playSfx(g: Game) {
+        val ln = g.log.size
+        if (ln > lastLog) {
+            var e: LogE? = null
+            for (i in lastLog until ln) {
+                val x = g.log[i]
+                if (x.c != null || x.x) e = x
+            }
+            if ((g.bomb || g.self2 != null) && g.over) snd.boom()
+            else if (e != null) {
+                val cs = e.c
+                if (cs != null) snd.play(cs.size) else snd.pass()
+            }
+        }
+        lastLog = ln
+    }
+
+    fun onResume() { snd.resume() }
+
+    fun onPause() { snd.pause() }
+
     fun stop() {
         handler.removeCallbacksAndMessages(null)
+        snd.release()
     }
 
     fun onBack(): Boolean {
@@ -178,7 +205,14 @@ class GameView(ctx: Context) : View(ctx) {
             "rules" -> { screen = Screen.RULES; rulesScroll = 0f }
             "back", "menu" -> { handler.removeCallbacks(botTask); screen = Screen.HOME }
             "again" -> startGame(nextLead())
-            "card" -> { msg = ""; if (sel.contains(h.idx)) sel.remove(h.idx) else sel.add(h.idx) }
+            "card" -> {
+                msg = ""
+                val up = !sel.contains(h.idx)
+                snd.tick(up)
+                if (up) sel.add(h.idx) else sel.remove(h.idx)
+            }
+            "music" -> snd.setMusic(!snd.musicOn)
+            "sfx" -> snd.setSfx(!snd.sfxOn)
             "play" -> humanPlay(false)
             "pass" -> humanPlay(true)
             "stopY" -> { game?.let { decide(it, 0, true) }; afterMove() }
@@ -358,6 +392,11 @@ class GameView(ctx: Context) : View(ctx) {
         button(c, RectF(cx - ww / 2, y, cx + ww / 2, y + d(56f)), "Main lawan bot", "start", true, false)
         y += d(56f) + d(12f)
         button(c, RectF(cx - ww / 2, y, cx + ww / 2, y + d(48f)), "Aturan main", "rules", true, true)
+        y += d(48f) + d(12f)
+        val tg = d(8f)
+        val tw = (ww - tg) / 2
+        button(c, RectF(cx - ww / 2, y, cx - ww / 2 + tw, y + d(40f)), "Musik: " + (if (snd.musicOn) "nyala" else "mati"), "music", true, !snd.musicOn)
+        button(c, RectF(cx + ww / 2 - tw, y, cx + ww / 2, y + d(40f)), "Suara: " + (if (snd.sfxOn) "nyala" else "mati"), "sfx", true, !snd.sfxOn)
         val v = versionName()
         txt(c, "© 2026 Poker 13" + (if (v.isNotEmpty()) " · v$v" else ""), cx, b - d(40f), d(11f), MUTE)
         txt(c, "AI-assisted by Claude · Card art: Vecteezy.com", cx, b - d(24f), d(11f), MUTE)
@@ -386,6 +425,10 @@ class GameView(ctx: Context) : View(ctx) {
         val cx = l + w / 2
         var y = t + d(4f)
         button(c, RectF(l + m, y, l + m + d(78f), y + d(36f)), "Menu", "menu", true, true)
+        val tbw = d(58f)
+        val tbx = l + m + d(78f) + d(8f)
+        button(c, RectF(tbx, y, tbx + tbw, y + d(36f)), "Musik", "music", true, !snd.musicOn)
+        button(c, RectF(tbx + tbw + d(6f), y, tbx + 2 * tbw + d(6f), y + d(36f)), "Suara", "sfx", true, !snd.sfxOn)
         txt(c, "Level: " + LEVELS[lv], l + w - m, y + d(24f), d(13f), MUTE, Paint.Align.RIGHT)
         y += d(44f)
 
