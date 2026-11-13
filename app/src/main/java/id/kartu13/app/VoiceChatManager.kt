@@ -1,12 +1,18 @@
 package id.kartu13.app
 
 import android.content.Context
+import android.media.AudioFormat
 import android.media.AudioManager
+import android.os.SystemClock
 import com.google.firebase.database.*
 import org.json.JSONObject
 import org.webrtc.*
 import org.webrtc.audio.JavaAudioDeviceModule
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.ThreadFactory
+import java.util.concurrent.TimeUnit
 
 /** WebRTC mesh voice client compatible with Kartu13 web v44 rooms/{code}/voice and vsig. */
 class VoiceChatManager(context: Context, private val db: DatabaseReference, private val playerId: String, private val onStatus: (String) -> Unit) {
@@ -22,6 +28,10 @@ class VoiceChatManager(context: Context, private val db: DatabaseReference, priv
     private var signalListener: ChildEventListener? = null
     private val peers = ConcurrentHashMap<String, Peer>()
     private val members = ConcurrentHashMap<String, Long>()
+    // indikator bicara: id pemain -> waktu (uptime ms) terakhir terdengar. Ambang sama dengan web (lo .02, lawan .03).
+    private val speakingNow = ConcurrentHashMap<String, Long>()
+    private var scheduler: ScheduledExecutorService? = null
+    private var lastSpeakKey = ""
     private val iceServers = listOf(
         PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
         PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer(),
@@ -39,6 +49,9 @@ class VoiceChatManager(context: Context, private val db: DatabaseReference, priv
         private const val TURN_USER = "ab597c34ed266524bbe49b26"
         private const val TURN_PASS = "gy41gktZ6lA0pvU2"
         private var initialized = false
+        private const val MIC_TH = 0.02
+        private const val REMOTE_TH = 0.03
+        private const val HOLD_MS = 450L
     }
 
     fun isJoined() = joined
@@ -54,7 +67,11 @@ class VoiceChatManager(context: Context, private val db: DatabaseReference, priv
                     initialized = true
                 }
             }
-            adm = JavaAudioDeviceModule.builder(app).setUseHardwareAcousticEchoCanceler(true).setUseHardwareNoiseSuppressor(true).createAudioDeviceModule()
+            adm = JavaAudioDeviceModule.builder(app)
+                .setUseHardwareAcousticEchoCanceler(true)
+                .setUseHardwareNoiseSuppressor(true)
+                .setSamplesReadyCallback(JavaAudioDeviceModule.SamplesReadyCallback { smp -> onMicSamples(smp) })
+                .createAudioDeviceModule()
             factory = PeerConnectionFactory.builder().setAudioDeviceModule(adm!!).createPeerConnectionFactory()
             audioSource = factory!!.createAudioSource(MediaConstraints().apply {
                 mandatory.add(MediaConstraints.KeyValuePair("googEchoCancellation", "true"))
@@ -93,6 +110,10 @@ class VoiceChatManager(context: Context, private val db: DatabaseReference, priv
             voiceRef.child(playerId).setValue(mapOf("t" to ServerValue.TIMESTAMP))
             (app.getSystemService(Context.AUDIO_SERVICE) as AudioManager).mode = AudioManager.MODE_IN_COMMUNICATION
             onStatus("Mikrofon aktif · menunggu pemain lain")
+            scheduler?.shutdownNow()
+            scheduler = Executors.newSingleThreadScheduledExecutor(ThreadFactory { r -> Thread(r).apply { isDaemon = true } }).also {
+                it.scheduleWithFixedDelay({ try { pollSpeaking() } catch (_: Throwable) {} }, 300L, 250L, TimeUnit.MILLISECONDS)
+            }
         } catch (e: Throwable) { // Throwable: UnsatisfiedLinkError / NoClassDefFoundError dari native WebRTC bukan Exception
             leave(); onStatus("Voice gagal dimulai: ${e.message ?: "kesalahan WebRTC"}")
         }
@@ -106,6 +127,8 @@ class VoiceChatManager(context: Context, private val db: DatabaseReference, priv
     fun leave() {
         val c = code
         joined = false
+        scheduler?.shutdownNow(); scheduler = null
+        speakingNow.clear(); lastSpeakKey = ""
         val base = c?.let { db.child("rooms").child(it) }
         try { signalListener?.let { base?.child("vsig")?.child(playerId)?.removeEventListener(it) } } catch (_: Exception) {}
         try { voiceListener?.let { base?.child("voice")?.removeEventListener(it) } } catch (_: Exception) {}
@@ -193,6 +216,51 @@ class VoiceChatManager(context: Context, private val db: DatabaseReference, priv
         db.child("rooms").child(c).child("vsig").child(to).push().setValue(mapOf("f" to playerId, "k" to kind, "d" to data))
     }
     private fun dropPeer(id: String) { peers.remove(id)?.pc?.dispose() }
+    // level mic sendiri dari sampel PCM16 (thread audio WebRTC)
+    private fun onMicSamples(smp: JavaAudioDeviceModule.AudioSamples) {
+        if (muted || smp.audioFormat != AudioFormat.ENCODING_PCM_16BIT) return
+        val data = smp.data
+        var sum = 0.0
+        var n = 0
+        var i = 0
+        while (i + 1 < data.size) {
+            val v = ((data[i + 1].toInt() shl 8) or (data[i].toInt() and 0xff)).toShort().toInt()
+            sum += v.toDouble() * v
+            n++
+            i += 2
+        }
+        if (n > 0 && Math.sqrt(sum / n) / 32768.0 > MIC_TH) speakingNow[playerId] = SystemClock.uptimeMillis()
+    }
+
+    // level pemain lain dari statistik inbound-rtp (audioLevel 0..1), dibaca tiap 250 ms
+    private fun pollSpeaking() {
+        if (!joined) return
+        for ((id, p) in peers) {
+            try {
+                p.pc.getStats(RTCStatsCollectorCallback { report ->
+                    var lvl = 0.0
+                    for (st in report.statsMap.values) {
+                        if (st.type == "inbound-rtp" && st.members["kind"] == "audio") {
+                            val a = (st.members["audioLevel"] as? Number)?.toDouble() ?: 0.0
+                            if (a > lvl) lvl = a
+                        }
+                    }
+                    if (lvl > REMOTE_TH) speakingNow[id] = SystemClock.uptimeMillis()
+                })
+            } catch (_: Throwable) {}
+        }
+        val key = speakingIds().sorted().joinToString(",")
+        if (key != lastSpeakKey) { lastSpeakKey = key; onStatus(statusText()) } // memicu gambar ulang
+    }
+
+    fun speakingIds(): Set<String> {
+        if (!joined) return emptySet()
+        val t = SystemClock.uptimeMillis()
+        return speakingNow.filter { t - it.value < HOLD_MS && (it.key != playerId || !muted) }.keys
+    }
+
+    fun isSpeaking(id: String): Boolean = speakingIds().contains(id)
+
     private fun statusText(): String {
         if (!joined) return "Voice tidak aktif"
         val connected = peers.values.count { it.pc.iceConnectionState() == PeerConnection.IceConnectionState.CONNECTED || it.pc.iceConnectionState() == PeerConnection.IceConnectionState.COMPLETED }

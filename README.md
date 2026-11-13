@@ -67,10 +67,11 @@ Catatan: source sudah ditambahkan. Build Android penuh belum dijalankan di lingk
   - 🟡 UI Android memakai dialog chat dan pemilih reaksi. Toast dipakai sebagai notifikasi reaksi; animasi emoji melayang, badge unread, dan toast pratinjau chat belum diparitas penuh dengan web.
   - ⬜ Validasi runtime dua klien (Android ↔ web) dan build release masih wajib.
 
-### ⬜ Tahap 4: voice chat
+### 🟡 Tahap 4: voice chat
 - ⬜ Suara antar pemain (WebRTC mesh, sinyal lewat Firebase `voice` + `vsig`)
 - ⬜ Mute, mode open mic / push-to-talk, tombol keluar voice
-- ⬜ Indikator siapa yang lagi ngomong, status sambungan per pemain
+- ✅ Indikator siapa yang lagi ngomong: cincin hijau + 🎙 di kursi pemain, baris lobby, dan tombol mic sendiri (`VoiceChatManager.speakingIds`, level mic dari sampel audio, level lawan dari statistik `inbound-rtp`, ambang sama dengan web)
+- ⬜ Status sambungan per pemain (sekarang baru ringkasan "tersambung x/y")
 - ⬜ Izin `RECORD_AUDIO` diminta saat pertama kali gabung voice
 
 ### ⬜ Tahap 5: pemolesan
@@ -123,3 +124,5 @@ Gambar kartu: Vecteezy.com (Set of poker cards, resource 53654344), Vecteezy Fre
 - Uses the existing Metered TURN endpoints and Opus SDP parameters capped at 24 kbps.
 - Lobby/game microphone control requests Android `RECORD_AUDIO`; tapping while connected toggles mute.
 - This is an initial integration. Validate Android↔Web audio, TURN relay, reconnect, audio focus, and Android lifecycle on physical devices before treating Stage 4 as complete.
+- Perbaikan force close saat mic ditekan: R8 membuang kelas `org.jni_zero.*` yang dipanggil library native WebRTC lewat JNI. Aturan keep ada di `app/proguard-rules.pro`; `join()` juga menangkap `Throwable` supaya error native tidak mematikan app. Izin `MODIFY_AUDIO_SETTINGS` ditambahkan.
+- Indikator bicara memakai ambang yang sama dengan web (mic sendiri 0,02, pemain lain 0,03) dan menahan status 450 ms supaya tidak berkedip. Perlu dites di perangkat nyata, terutama sensitivitas mic dan echo.

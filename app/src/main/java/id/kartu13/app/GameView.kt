@@ -623,6 +623,11 @@ class GameView(ctx: Context) : View(ctx) {
         if (enabled) hits.add(Hit(r, id, idx))
     }
 
+    // cincin hijau di sekeliling elemen pemain yang lagi ngomong
+    private fun speakRing(c: Canvas, r: RectF, rad: Float) {
+        box(c, RectF(r.left - d(3f), r.top - d(3f), r.right + d(3f), r.bottom + d(3f)), 0, OKC, d(2.5f), rad + d(3f))
+    }
+
     private fun drawCard(c: Canvas, id: Int, r: RectF) {
         val rad = r.width() * 0.055f
         paint.style = Paint.Style.FILL
@@ -1138,7 +1143,9 @@ class GameView(ctx: Context) : View(ctx) {
         // Toolbar dipisah dari daftar pemain agar tombol tidak menimpa jumlah pemain/baris pertama.
         txt(c, "PEMAIN", boxR.left + d(14f), boxR.top + d(24f), d(11f), GOLD, Paint.Align.LEFT, true)
         txt(c, "${state.players.size}/4", boxR.left + d(72f), boxR.top + d(24f), d(10f), MUTE, Paint.Align.LEFT, true)
-        button(c, RectF(boxR.right - d(148f), boxR.top + d(5f), boxR.right - d(112f), boxR.top + d(37f)), if (!voice.isJoined()) "🎤" else if (voice.isMuted()) "🔇" else "🎙", "voice", true, true, -1, 12f)
+        val lobbyMic = RectF(boxR.right - d(148f), boxR.top + d(5f), boxR.right - d(112f), boxR.top + d(37f))
+        button(c, lobbyMic, if (!voice.isJoined()) "🎤" else if (voice.isMuted()) "🔇" else "🎙", "voice", true, true, -1, 12f)
+        if (voice.isSpeaking(firebase.playerId)) speakRing(c, lobbyMic, d(10f))
         button(c, RectF(boxR.right - d(104f), boxR.top + d(5f), boxR.right - d(50f), boxR.top + d(37f)), "CHAT", "chat", true, true, -1, 8f)
         button(c, RectF(boxR.right - d(44f), boxR.top + d(5f), boxR.right - d(8f), boxR.top + d(37f)), "☺", "react", true, true, -1, 12f)
         val srv = if (!state.connected) "SERVER OFFLINE" else state.myPing?.let { "SERVER · ${it} ms" } ?: "SERVER ONLINE"
@@ -1152,6 +1159,10 @@ class GameView(ctx: Context) : View(ctx) {
             val isMe = p.id == firebase.playerId
             val label = p.name + (if (isMe) "  · KAMU" else "")
             txt(c, label, row.left + d(9f), yy + d(5f), d(14f), if (isMe) GOLD else INK, Paint.Align.LEFT, isMe)
+            if (voice.isSpeaking(p.id)) {
+                box(c, row, 0, OKC, d(1.5f), d(8f))
+                txt(c, "🎙", row.right - d(96f), yy + d(5f), d(13f), OKC, Paint.Align.CENTER)
+            }
             val status = firebase.playerStatus(p.id, state.players)
             val badge = if (isHost) "HOST" else ""
             if (badge.isNotEmpty()) txt(c, badge, row.right - d(9f), yy - d(2f), d(8f), GOLD, Paint.Align.RIGHT, true)
@@ -1450,7 +1461,9 @@ class GameView(ctx: Context) : View(ctx) {
         button(c, RectF(tbx, y, tbx + tbw, y + d(36f)), "Musik", "music", true, !snd.musicOn)
         button(c, RectF(tbx + tbw + d(6f), y, tbx + 2 * tbw + d(6f), y + d(36f)), "Suara", "sfx", true, !snd.sfxOn)
         if (multiplayer) {
-            button(c, RectF(l + w - m - d(160f), y, l + w - m - d(124f), y + d(36f)), if (!voice.isJoined()) "🎤" else if (voice.isMuted()) "🔇" else "🎙", "voice", true, true, -1, 12f)
+            val gameMic = RectF(l + w - m - d(160f), y, l + w - m - d(124f), y + d(36f))
+            button(c, gameMic, if (!voice.isJoined()) "🎤" else if (voice.isMuted()) "🔇" else "🎙", "voice", true, true, -1, 12f)
+            if (voice.isSpeaking(firebase.playerId)) speakRing(c, gameMic, d(10f))
             button(c, RectF(l + w - m - d(116f), y, l + w - m - d(60f), y + d(36f)), "CHAT", "chat", true, true, -1, 9f)
             button(c, RectF(l + w - m - d(52f), y, l + w - m, y + d(36f)), "☺", "react", true, true, -1, 13f)
         } else txt(c, "Level: " + LEVELS[lv], l + w - m, y + d(24f), d(13f), MUTE, Paint.Align.RIGHT)
@@ -1484,6 +1497,10 @@ class GameView(ctx: Context) : View(ctx) {
             txt(c, st, r.centerX(), r.top + d(38f), d(12f), MUTE)
             if (multiplayer && seatPids.getOrNull(p) != null) {
                 val pid = seatPids[p]
+                if (voice.isSpeaking(pid)) {
+                    speakRing(c, r, d(12f))
+                    txt(c, "🎙", r.right - d(14f), r.top + d(18f), d(12f), OKC, Paint.Align.CENTER)
+                }
                 val status = firebase.playerStatus(pid, roomState?.players ?: emptyList())
                 val statusText = when (status.state) {
                     "bot" -> "🤖 BOT"
