@@ -549,13 +549,24 @@ class FirebaseRoom(context: Context) {
         val ref = roomRef
         stopListening()
         if (ref != null) {
-            // Pertahankan perilaku web: host membubarkan lobby, pemain lain hanya menghapus dirinya.
             ref.get().addOnSuccessListener { snap ->
-                if (snap.child("status").getValue(String::class.java) == "lobby" &&
-                    snap.child("host").getValue(String::class.java) == playerId && deleteLobbyIfHost) ref.removeValue()
-                else {
-                    ref.child("players").child(playerId).removeValue()
-                    ref.child("presence").child(playerId).removeValue()
+                val inLobby = snap.child("status").getValue(String::class.java) == "lobby"
+                val isHost = snap.child("host").getValue(String::class.java) == playerId
+                val humans = snap.child("players").children.count { it.child("bot").getValue(Boolean::class.java) != true }
+                when {
+                    // Lobby: host membubarkan room, pemain lain hanya menghapus dirinya (sama dengan web).
+                    inLobby && isHost && deleteLobbyIfHost -> ref.removeValue()
+                    inLobby -> {
+                        ref.child("players").child(playerId).removeValue()
+                        ref.child("presence").child(playerId).removeValue()
+                    }
+                    // Game berjalan, tidak ada manusia lain: bubarkan room (sama dengan web leaveGame).
+                    humans <= 1 -> ref.removeValue()
+                    // Game berjalan: JANGAN hapus dari players. game.order masih memuat id ini, kalau dihapus klien lain
+                    // melihat "?" dan "Giliran undefined", status tetap "online", dan bot tidak pernah mengambil alih.
+                    // Cukup tandai putus: jadi AFK setelah masa tunggu dan kursinya dipegang bot.
+                    else -> ref.child("presence").child(playerId)
+                        .updateChildren(mapOf("online" to false, "off" to ServerValue.TIMESTAMP, "hid" to null))
                 }
             }
         }
@@ -563,7 +574,8 @@ class FirebaseRoom(context: Context) {
         prefs.edit().remove("room").apply()
     }
 
-    fun stopListening() {
+    /** [keepDisconnect] = true saat app ditutup di tengah game: onDisconnect tetap hidup supaya server menandai kita putus. */
+    fun stopListening(keepDisconnect: Boolean = false) {
         stopChatListener()
         stopReactionListener()
         main.removeCallbacks(heartbeat); main.removeCallbacks(presenceTick)
@@ -571,7 +583,7 @@ class FirebaseRoom(context: Context) {
         presenceListener = null
         connectedListener?.let { db.child(".info/connected").removeEventListener(it) }; connectedListener = null
         offsetListener?.let { db.child(".info/serverTimeOffset").removeEventListener(it) }; offsetListener = null
-        roomRef?.child("presence")?.child(playerId)?.onDisconnect()?.cancel()
+        if (!keepDisconnect) roomRef?.child("presence")?.child(playerId)?.onDisconnect()?.cancel()
         listeners.forEach { (ref, listener) -> ref.removeEventListener(listener) }
         listeners.clear()
         roomRef = null; roomCallback = null; roomPlayers = emptyList(); roomPresence = emptyMap()

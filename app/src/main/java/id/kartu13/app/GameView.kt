@@ -364,7 +364,7 @@ class GameView(ctx: Context) : View(ctx) {
     fun stop() {
         handler.removeCallbacksAndMessages(null)
         voice.leave()
-        if (multiplayer || roomState != null) firebase.stopListening()
+        if (multiplayer || roomState != null) firebase.stopListening(keepDisconnect = roomState?.status == "play") // game jalan: biarkan server menandai putus -> AFK -> bot ambil alih
         snd.release()
     }
 

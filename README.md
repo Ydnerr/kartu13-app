@@ -59,7 +59,9 @@ Catatan: source sudah ditambahkan. Build Android penuh belum dijalankan di lingk
   - ✅ `onDisconnect` menandai pemain offline; server time offset dipakai untuk perhitungan waktu.
   - ✅ Bot dapat mengambil giliran pemain AFK setelah grace period; effective driver mengikuti prioritas host aktif lalu pemain aktif berikutnya.
   - ✅ Indikator status dan ping di lobby serta kursi pemain; palet hijau / amber / merah mengikuti versi web.
-  - ⬜ Validasi runtime dua klien (Android ↔ web), terutama saat app masuk background, koneksi putus mendadak, dan reconnect. Belum boleh dianggap rilis sebelum pengujian ini lolos.
+  - ✅ Keluar dari app / tombol Keluar di tengah game kini sama dengan web: pemain **tidak dihapus** dari `players` (sebelumnya dihapus, sehingga lawan di web melihat nama "?", "Giliran undefined", status tetap "online", dan bot tidak mengambil alih). Presence ditandai `online:false` + `off`, lalu jadi AFK setelah masa tunggu dan kursinya dipegang bot. Room dibubarkan kalau tidak ada manusia lain.
+  - ✅ App ditutup saat game berjalan: `onDisconnect` dibiarkan aktif (`stopListening(keepDisconnect = true)`) supaya server tetap menandai pemain putus walau heartbeat berhenti.
+  - ⬜ Validasi runtime dua klien (Android ↔ web) dengan build terbaru: keluar via Back, tombol Home, swipe dari recent apps, koneksi putus mendadak, dan reconnect (lawan harus melihat AWAY → offline · bot, dan bot jalan di giliran pemain itu). Belum boleh dianggap rilis sebelum pengujian ini lolos.
 - **🟡 3c. Chat dan reaksi (implementasi awal)**
   - ✅ Chat realtime di `rooms/{kode}/chat`, kompatibel dengan format web v44 (`p`, `n`, `m`, `t`), maksimal 50 pesan terakhir.
   - ✅ Batas pesan 140 karakter dan jeda kirim minimum 700 ms.
