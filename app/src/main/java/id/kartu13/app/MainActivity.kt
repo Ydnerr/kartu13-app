@@ -16,6 +16,17 @@ class MainActivity : Activity() {
         setContentView(view)
     }
 
+    fun requestMicPermission() {
+        if (android.os.Build.VERSION.SDK_INT >= 23 && checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 13013)
+        } else view.onMicPermissionResult(true)
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 13013) view.onMicPermissionResult(grantResults.isNotEmpty() && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED)
+    }
+
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         if (!view.onBack()) super.onBackPressed()

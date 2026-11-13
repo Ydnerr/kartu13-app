@@ -113,3 +113,13 @@ Secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`. Si
 
 ## Kredit
 Gambar kartu: Vecteezy.com (Set of poker cards, resource 53654344), Vecteezy Free License, wajib atribusi. Lihat `Vecteezy-License-Information.pdf` dan `app/src/main/assets/cards/CREDITS.txt`.
+
+
+## Stage 4 — WebRTC Voice Chat (initial Android implementation)
+
+- Adds native WebRTC audio mesh using `io.github.webrtc-sdk:android:144.7559.15`.
+- Uses the web v44 Firebase signaling paths: `rooms/{code}/voice` and `rooms/{code}/vsig/{playerId}`.
+- Uses lexicographic player-ID offer ownership, matching `game.js`.
+- Uses the existing Metered TURN endpoints and Opus SDP parameters capped at 24 kbps.
+- Lobby/game microphone control requests Android `RECORD_AUDIO`; tapping while connected toggles mute.
+- This is an initial integration. Validate Android↔Web audio, TURN relay, reconnect, audio focus, and Android lifecycle on physical devices before treating Stage 4 as complete.

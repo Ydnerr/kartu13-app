@@ -7,6 +7,7 @@ dependencies {
     // Firebase Realtime Database: SDK resmi untuk listener realtime dan transaksi atomik.
     implementation(platform("com.google.firebase:firebase-bom:35.2.0"))
     implementation("com.google.firebase:firebase-database")
+    implementation("io.github.webrtc-sdk:android:144.7559.15")
 }
 
 android {

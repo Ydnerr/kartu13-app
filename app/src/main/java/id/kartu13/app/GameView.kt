@@ -78,6 +78,9 @@ class GameView(ctx: Context) : View(ctx) {
     private val prefs = ctx.getSharedPreferences("k13", Context.MODE_PRIVATE)
     private val snd = Snd(ctx)
     private val firebase by lazy { FirebaseRoom(ctx) }
+    private val voice by lazy { VoiceChatManager(ctx, FirebaseRoom.database(ctx).reference, firebase.playerId) { status -> post { voiceStatus = status; invalidate() } } }
+    private var voiceStatus = "Voice tidak aktif"
+    private var waitingMicPermission = false
     private var roomState: FirebaseRoom.RoomState? = null
     private var multiplayer = false
     private var seatPids: List<String> = emptyList()
@@ -357,6 +360,7 @@ class GameView(ctx: Context) : View(ctx) {
 
     fun stop() {
         handler.removeCallbacksAndMessages(null)
+        voice.leave()
         if (multiplayer || roomState != null) firebase.stopListening()
         snd.release()
     }
@@ -366,6 +370,7 @@ class GameView(ctx: Context) : View(ctx) {
         handler.removeCallbacks(botTask)
         if (screen == Screen.TUTSLIDE || screen == Screen.GUIDE) screen = Screen.TUTMENU
         else {
+            voice.leave()
             if (screen == Screen.LOBBY || multiplayer) firebase.leave()
             multiplayer = false; roomState = null; game = null; screen = Screen.HOME
         }
@@ -382,8 +387,9 @@ class GameView(ctx: Context) : View(ctx) {
             "multi" -> openMultiplayerDialog()
             "chat" -> showChatDialog()
             "react" -> showReactionDialog()
+            "voice" -> toggleVoice()
             "lobbyStart" -> roomState?.let { firebase.startGame(it) { r -> if (r.isFailure) { roomMessage = r.exceptionOrNull()?.message ?: "Gagal mulai"; invalidate() } } }
-            "lobbyExit" -> { firebase.leave(); roomState = null; multiplayer = false; game = null; screen = Screen.HOME }
+            "lobbyExit" -> { voice.leave(); firebase.leave(); roomState = null; multiplayer = false; game = null; screen = Screen.HOME }
             "addBot" -> roomState?.let { st -> firebase.addBot(st.botLevel, st) { r -> if (r.isFailure) { roomMessage = r.exceptionOrNull()?.message ?: "Gagal tambah bot"; invalidate() } } }
             "botLevel" -> roomState?.let { st -> firebase.setBotLevel((st.botLevel + 1) % 4, st) { r -> if (r.isFailure) { roomMessage = r.exceptionOrNull()?.message ?: "Gagal ubah level"; invalidate() } } }
             "rmBot" -> roomState?.players?.getOrNull(h.idx)?.let { p -> roomState?.let { st -> firebase.removeBot(p.id, st) } }
@@ -412,7 +418,7 @@ class GameView(ctx: Context) : View(ctx) {
             }
             "gn" -> { gI = min(GUIDE.size - 1, gI + 1); gStep() }
             "gm" -> { lv = 0; startGame(null) }
-            "back", "menu" -> { handler.removeCallbacks(botTask); if (multiplayer) firebase.leave(); multiplayer = false; roomState = null; game = null; screen = Screen.HOME }
+            "back", "menu" -> { handler.removeCallbacks(botTask); voice.leave(); if (multiplayer) firebase.leave(); multiplayer = false; roomState = null; game = null; screen = Screen.HOME }
             "again" -> if (multiplayer) roomState?.let { st -> firebase.startGame(st) { r -> if (r.isFailure) { msg = r.exceptionOrNull()?.message ?: "Gagal mulai ulang"; invalidate() } } } else startGame(nextLead())
             "card" -> {
                 msg = ""
@@ -948,6 +954,24 @@ class GameView(ctx: Context) : View(ctx) {
         dialog.window?.setLayout((resources.displayMetrics.widthPixels * .92f).toInt().coerceAtLeast(d(280f).toInt()), -2)
     }
 
+    fun onMicPermissionResult(granted: Boolean) {
+        waitingMicPermission = false
+        if (granted) firebase.currentCode?.let { voice.join(it) }
+        else { voiceStatus = "Izin mikrofon ditolak"; Toast.makeText(context, "Izin mikrofon diperlukan untuk voice chat.", Toast.LENGTH_SHORT).show() }
+        invalidate()
+    }
+
+    private fun toggleVoice() {
+        if (!voice.isJoined()) {
+            if (android.os.Build.VERSION.SDK_INT >= 23 && context.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                waitingMicPermission = true
+                (context as? android.app.Activity)?.let { (it as? MainActivity)?.requestMicPermission() }
+                    ?: run { voiceStatus = "Tidak bisa meminta izin mikrofon" }
+            } else firebase.currentCode?.let { voice.join(it) }
+        } else voice.toggleMute()
+        invalidate()
+    }
+
     private fun showChatDialog() {
         val code = firebase.currentCode ?: return
         val root = LinearLayout(context).apply {
@@ -1114,10 +1138,12 @@ class GameView(ctx: Context) : View(ctx) {
         // Toolbar dipisah dari daftar pemain agar tombol tidak menimpa jumlah pemain/baris pertama.
         txt(c, "PEMAIN", boxR.left + d(14f), boxR.top + d(24f), d(11f), GOLD, Paint.Align.LEFT, true)
         txt(c, "${state.players.size}/4", boxR.left + d(72f), boxR.top + d(24f), d(10f), MUTE, Paint.Align.LEFT, true)
+        button(c, RectF(boxR.right - d(148f), boxR.top + d(5f), boxR.right - d(112f), boxR.top + d(37f)), if (!voice.isJoined()) "🎤" else if (voice.isMuted()) "🔇" else "🎙", "voice", true, true, -1, 12f)
         button(c, RectF(boxR.right - d(104f), boxR.top + d(5f), boxR.right - d(50f), boxR.top + d(37f)), "CHAT", "chat", true, true, -1, 8f)
         button(c, RectF(boxR.right - d(44f), boxR.top + d(5f), boxR.right - d(8f), boxR.top + d(37f)), "☺", "react", true, true, -1, 12f)
         val srv = if (!state.connected) "SERVER OFFLINE" else state.myPing?.let { "SERVER · ${it} ms" } ?: "SERVER ONLINE"
         txt(c, srv, boxR.right - d(14f), boxR.top + d(51f), d(8f), if (state.connected) OKC else BADC, Paint.Align.RIGHT, true)
+        if (voice.isJoined()) txt(c, voiceStatus, boxR.left + d(12f), boxR.top + d(51f), d(8f), OKC, Paint.Align.LEFT)
         var yy = boxR.top + d(76f)
         state.players.forEachIndexed { index, p ->
             val row = RectF(boxR.left + d(9f), yy - d(17f), boxR.right - d(9f), yy + d(15f))
@@ -1424,6 +1450,7 @@ class GameView(ctx: Context) : View(ctx) {
         button(c, RectF(tbx, y, tbx + tbw, y + d(36f)), "Musik", "music", true, !snd.musicOn)
         button(c, RectF(tbx + tbw + d(6f), y, tbx + 2 * tbw + d(6f), y + d(36f)), "Suara", "sfx", true, !snd.sfxOn)
         if (multiplayer) {
+            button(c, RectF(l + w - m - d(160f), y, l + w - m - d(124f), y + d(36f)), if (!voice.isJoined()) "🎤" else if (voice.isMuted()) "🔇" else "🎙", "voice", true, true, -1, 12f)
             button(c, RectF(l + w - m - d(116f), y, l + w - m - d(60f), y + d(36f)), "CHAT", "chat", true, true, -1, 9f)
             button(c, RectF(l + w - m - d(52f), y, l + w - m, y + d(36f)), "☺", "react", true, true, -1, 13f)
         } else txt(c, "Level: " + LEVELS[lv], l + w - m, y + d(24f), d(13f), MUTE, Paint.Align.RIGHT)
