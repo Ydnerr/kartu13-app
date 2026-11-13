@@ -39,7 +39,7 @@ Prinsip: tanpa WebView. Setiap tahap harus bisa di-build dan dimainkan sendiri s
 - ✅ Menu tutorial: pilih terpandu, aturan geser, atau ringkasan teks (`openTut`); tombol "Aturan main" di layar depan jadi "Tutorial"
 - ✅ Teks tutorial disesuaikan buat Android (tombol Mainkan, tanpa petunjuk keyboard PC). Isi ada di `Tutorial.kt`
 
-### 🟡 Tahap 3: multiplayer Firebase (2 sampai 4 pemain)
+### ✅ Tahap 3: multiplayer Firebase (2 sampai 4 pemain)
 Implementasi awal **3a** sudah masuk ke source:
 - ✅ Firebase Realtime Database SDK resmi, konfigurasi memakai Firebase project yang sama dengan web.
 - ✅ Nama pemain maksimal 14 karakter dan disimpan di SharedPreferences.
@@ -50,7 +50,7 @@ Implementasi awal **3a** sudah masuk ke source:
 - ✅ Aksi pemain dan keputusan kartu murni memakai transaksi Firebase; versi `VMAJ` dicek sebelum state dipakai.
 - ✅ Perbaikan kompatibilitas web ↔ Android: `VMAJ` sekarang `v44` (web memakai `VER.split('.')[0]` = `v44`, sebelumnya app memakai `44` sehingga game yang dimulai host web ditolak dan app tertahan di ruang tunggu), `stopped` ditulis sebagai objek `{pid: true}` seperti web, dan penanda `x` (lewat) dari web yang bernilai angka `1` ikut terbaca
 - ✅ Dialog Multiplayer otomatis tertutup setelah berhasil buat / gabung room (sebelumnya tertinggal di atas ruang tunggu kalau masuk lewat GABUNG)
-- 🟡 Failover host saat host putus / AFK mulai ditangani di Tahap 3b melalui effective driver. Hak administrasi lobby (tambah/hapus bot dan mulai game pertama) tetap milik host asli.
+- ✅ Failover host saat host putus / AFK mulai ditangani di Tahap 3b melalui effective driver. Hak administrasi lobby (tambah/hapus bot dan mulai game pertama) tetap milik host asli.
 - ✅ Pemolesan visual awal dialog Multiplayer dan Lobby: panel felt gelap, aksen emas, kode room sebagai fokus, daftar pemain berbaris, dan tombol host lebih terstruktur.
 
 Catatan: source sudah ditambahkan. Build Android penuh belum dijalankan di lingkungan ini karena Gradle/Android SDK tidak tersedia. Build dan uji dua perangkat (Android + web) masih wajib sebelum dianggap rilis.
