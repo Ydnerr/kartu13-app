@@ -8,6 +8,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.LinearGradient
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
@@ -593,14 +594,53 @@ class GameView(ctx: Context) : View(ctx) {
     }
 
     private fun button(c: Canvas, r: RectF, label: String, id: String, enabled: Boolean, ghost: Boolean, idx: Int = -1, fs: Float = 15f) {
-        val a = if (enabled) 255 else 90
+        val a = if (enabled) 255 else 105
+        val radius = d(13f)
+        val rr = RectF(r)
+        // Elevation and layered surface make controls read as deliberate UI, not flat canvas labels.
+        paint.style = Paint.Style.FILL
+        paint.shader = null
+        paint.color = Color.argb(if (enabled) 72 else 28, 0, 0, 0)
+        c.drawRoundRect(RectF(rr.left, rr.top + d(3f), rr.right, rr.bottom + d(3f)), radius, radius, paint)
         if (ghost) {
-            box(c, r, 0, fade(GOLD, a), d(1.5f), d(10f))
-            txt(c, label, r.centerX(), r.centerY() + d(fs * 0.37f), d(fs), fade(GOLD, a), Paint.Align.CENTER, true)
+            paint.color = Color.argb(if (enabled) 42 else 18, 224, 180, 76)
+            c.drawRoundRect(rr, radius, radius, paint)
+            paint.shader = LinearGradient(rr.left, rr.top, rr.right, rr.bottom,
+                intArrayOf(fade(Color.WHITE, if (enabled) 24 else 10), fade(GOLD, if (enabled) 10 else 4)), null, Shader.TileMode.CLAMP)
+            c.drawRoundRect(rr, radius, radius, paint)
+            paint.shader = null
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = d(1.15f)
+            paint.color = fade(GOLD, a)
+            c.drawRoundRect(rr, radius, radius, paint)
+            paint.style = Paint.Style.FILL
+            // small gold marker at the left edge
+            paint.color = fade(GOLD, if (enabled) 190 else 65)
+            c.drawRoundRect(RectF(rr.left + d(7f), rr.top + d(10f), rr.left + d(10f), rr.bottom - d(10f)), d(2f), d(2f), paint)
         } else {
-            box(c, r, fade(GOLD, a), 0, 0f, d(10f))
-            txt(c, label, r.centerX(), r.centerY() + d(fs * 0.37f), d(fs), fade(DARK, a), Paint.Align.CENTER, true)
+            val top = if (enabled) Color.parseColor("#f4d47b") else Color.parseColor("#746a50")
+            val bottom = if (enabled) Color.parseColor("#c18b2d") else Color.parseColor("#514a39")
+            paint.shader = LinearGradient(rr.left, rr.top, rr.left, rr.bottom, top, bottom, Shader.TileMode.CLAMP)
+            c.drawRoundRect(rr, radius, radius, paint)
+            paint.shader = null
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = d(1f)
+            paint.color = fade(Color.WHITE, if (enabled) 72 else 25)
+            c.drawRoundRect(RectF(rr.left + d(.7f), rr.top + d(.7f), rr.right - d(.7f), rr.bottom - d(.7f)), radius, radius, paint)
+            paint.style = Paint.Style.FILL
+            // restrained highlight along the top edge
+            paint.color = fade(Color.WHITE, if (enabled) 45 else 12)
+            c.drawRoundRect(RectF(rr.left + d(10f), rr.top + d(2f), rr.right - d(10f), rr.top + d(3.5f)), d(1f), d(1f), paint)
         }
+        tp.reset()
+        tp.isAntiAlias = true
+        tp.textSize = d(fs)
+        tp.color = fade(if (ghost) GOLD else Color.parseColor("#211907"), a)
+        tp.textAlign = Paint.Align.CENTER
+        tp.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        tp.setShadowLayer(d(1.5f), 0f, d(1f), Color.argb(if (enabled) 90 else 25, 0, 0, 0))
+        c.drawText(label, rr.centerX(), rr.centerY() - (tp.ascent() + tp.descent()) / 2f, tp)
+        tp.clearShadowLayer()
         if (enabled) hits.add(Hit(r, id, idx))
     }
 
@@ -838,24 +878,25 @@ class GameView(ctx: Context) : View(ctx) {
         val contentW = w - 2 * m
 
         // Header bergaya meja kartu: hierarki kode room lebih kuat dan punya affordance salin.
-        txt(c, "♠  MEJA MULTIPLAYER  ♥", cx, t + d(27f), d(11f), MUTE, Paint.Align.CENTER, true)
-        txt(c, "Ruang tunggu", cx, t + d(58f), d(25f), GOLD, Paint.Align.CENTER, true)
-        val codeTop = t + d(78f)
+        txt(c, "♠   KARTU 13  ·  MULTIPLAYER   ♥", cx, t + d(25f), d(10f), MUTE, Paint.Align.CENTER, true)
+        txt(c, "Ruang tunggu", cx, t + d(57f), d(27f), GOLD, Paint.Align.CENTER, true)
+        txt(c, "Bermain bersama teman dalam satu meja", cx, t + d(76f), d(11f), MUTE, Paint.Align.CENTER)
+        val codeTop = t + d(91f)
         val codeRect = RectF(l + m, codeTop, l + w - m, codeTop + d(94f))
         box(c, codeRect, Color.argb(190, 3, 35, 25), Color.argb(150, 224, 180, 76), d(1.4f), d(16f))
-        txt(c, "KODE ROOM · BAGIKAN KE TEMAN", cx, codeRect.top + d(24f), d(10f), MUTE, Paint.Align.CENTER, true)
-        txt(c, state.code, cx, codeRect.top + d(68f), d(37f), INK, Paint.Align.CENTER, true)
+        txt(c, "KODE ROOM  ·  UNDANG TEMANMU", cx, codeRect.top + d(24f), d(10f), MUTE, Paint.Align.CENTER, true)
+        txt(c, state.code, cx, codeRect.top + d(69f), d(39f), INK, Paint.Align.CENTER, true)
 
         val top = codeRect.bottom + d(14f)
         val bottom = b - d(if (state.host == firebase.playerId) 184f else 144f)
         val boxR = RectF(l + m, top, l + w - m, max(top + d(100f), bottom))
         box(c, boxR, Color.argb(165, 4, 25, 20), Color.argb(100, 224, 180, 76), d(1f), d(15f))
-        txt(c, "PEMAIN", boxR.left + d(14f), boxR.top + d(24f), d(11f), GOLD, Paint.Align.LEFT, true)
-        txt(c, "${state.players.size}/4", boxR.right - d(14f), boxR.top + d(24f), d(11f), MUTE, Paint.Align.RIGHT, true)
+        txt(c, "DAFTAR PEMAIN", boxR.left + d(14f), boxR.top + d(25f), d(11f), GOLD, Paint.Align.LEFT, true)
+        txt(c, "${state.players.size} DARI 4", boxR.right - d(14f), boxR.top + d(25f), d(10f), MUTE, Paint.Align.RIGHT, true)
         var yy = boxR.top + d(48f)
         state.players.forEachIndexed { index, p ->
             val row = RectF(boxR.left + d(9f), yy - d(17f), boxR.right - d(9f), yy + d(15f))
-            if (index % 2 == 0) box(c, row, Color.argb(45, 255, 255, 255), 0, 0f, d(8f))
+            box(c, row, Color.argb(if (index % 2 == 0) 34 else 22, 255, 255, 255), Color.argb(22, 255, 255, 255), d(.6f), d(9f))
             val isHost = p.id == state.host
             val isMe = p.id == firebase.playerId
             val label = p.name + (if (isMe) "  · KAMU" else "")
