@@ -25,7 +25,7 @@ import kotlin.random.Random
  */
 class FirebaseRoom(context: Context) {
     companion object {
-        const val VMAJ = "44"
+        const val VMAJ = "v44" // sama persis dengan web: VMAJ = VER.split('.')[0] dari VER = 'v44.11'
         private const val DB_URL = "https://poker13-86781-default-rtdb.asia-southeast1.firebasedatabase.app"
         private const val API_KEY = "AIzaSyDuIFh5L1U6QfmGXf6gwyqhLNqs_flk6-A"
         private const val PROJECT_ID = "poker13-86781"
@@ -598,14 +598,15 @@ object GameWire {
             "first" to g.first, "over" to g.over,
             "winner" to g.winner?.let(::pid),
             "fin" to g.fin.map(::pid), "dec" to g.dec.associate { pid(it) to true }.ifEmpty { null },
-            "stopped" to g.stopped.map(::pid), "st" to pid(g.st), "s" to g.s,
+            "stopped" to g.stopped.associate { pid(it) to true }.ifEmpty { null }, "st" to pid(g.st), "s" to g.s,
             "bomb" to g.bomb, "self2" to g.self2?.let(::pid), "quad2" to g.quad2?.let(::pid),
             "log" to logs
         )
     }
 
     fun decode(raw: Map<String, Any?>, localPid: String): Pair<Game, List<String>>? {
-        if (raw["v"]?.toString() != FirebaseRoom.VMAJ) return null
+        val ver = raw["v"]?.toString()
+        if (ver != FirebaseRoom.VMAJ && ver != "44") return null // "44" = game lama buatan app versi sebelumnya
         val orderPids = (raw["order"] as? List<*>)?.mapNotNull { it as? String } ?: return null
         if (orderPids.size !in 2..4 || localPid !in orderPids) return null
         val rotated = orderPids.dropWhile { it != localPid } + orderPids.takeWhile { it != localPid }
@@ -626,14 +627,22 @@ object GameWire {
             Last(p, cards, (it["t"] as? String)?.firstOrNull() ?: ' ', (it["n"] as? Number)?.toInt() ?: cards.size,
                 (it["k"] as? Number)?.toInt() ?: (cards.maxOrNull() ?: 0), (it["k2"] as? Number)?.toInt() ?: 0)
         }
-        fun setIds(key: String): Set<Int> = ((raw[key] as? Map<*, *>)?.keys?.mapNotNull { seat(it) } ?: emptyList()).toSet()
+        fun setIds(key: String): Set<Int> {
+            val v = raw[key]
+            val ids = when (v) {
+                is Map<*, *> -> v.keys.mapNotNull { seat(it) }
+                is List<*> -> v.mapNotNull { seat(it) }
+                else -> emptyList()
+            }
+            return ids.toSet()
+        }
         g.passed.addAll(setIds("passed"))
         g.first = raw["first"] as? Boolean ?: false
         g.over = raw["over"] as? Boolean ?: false
         g.winner = seat(raw["winner"])
         g.fin.addAll(((raw["fin"] as? List<*>) ?: emptyList<Any>()).mapNotNull(::seat))
         g.dec.addAll(setIds("dec"))
-        g.stopped.addAll(((raw["stopped"] as? List<*>) ?: emptyList<Any>()).mapNotNull(::seat))
+        g.stopped.addAll(setIds("stopped")) // web menyimpan objek {pid: true}
         g.st = seat(raw["st"]) ?: 0
         g.s = (raw["s"] as? Number)?.toInt() ?: -1
         g.bomb = raw["bomb"] as? Boolean ?: false
@@ -644,7 +653,8 @@ object GameWire {
             val m = item as? Map<*, *> ?: return@forEach
             val p = seat(m["p"]) ?: return@forEach
             val cards = (m["c"] as? List<*>)?.mapNotNull { (it as? Number)?.toInt() }
-            g.log.add(LogE(p, cards, m["m"] as? String, m["x"] as? Boolean ?: false))
+            val xv = m["x"] // web menulis x: 1 (angka), bukan boolean
+            g.log.add(LogE(p, cards, m["m"] as? String, xv == true || ((xv as? Number)?.toInt() ?: 0) != 0))
         }
         return g to rotated
     }

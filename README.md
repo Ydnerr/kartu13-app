@@ -3,7 +3,7 @@
 Port native Kotlin dari game web "Kartu 13 / Poker 13". Tanpa WebView; Firebase SDK resmi dipakai untuk multiplayer.
 
 ## Status
-Tahap 1, 2, 2.5, dan 2.6 selesai. Implementasi awal Tahap 3a sudah ditambahkan; lihat batasan yang masih tersisa di bawah. Acuan fitur: web `index.html` + `game.js` v44.11 (tanda ✅ = sudah ada di app Android, ⬜ = belum).
+Tahap 1, 2, 2.5, dan 2.6 selesai. Tahap 3 dan 4 sudah ada implementasinya di app, tinggal validasi runtime Android ↔ web di perangkat nyata. Acuan fitur: web `index.html` + `game.js` v44.11 (tanda ✅ = sudah ada di app Android, ⬜ = belum).
 
 Prinsip: tanpa WebView. Setiap tahap harus bisa di-build dan dimainkan sendiri sebelum lanjut ke tahap berikutnya.
 
@@ -48,6 +48,8 @@ Implementasi awal **3a** sudah masuk ke source:
 - ✅ Host dapat tambah/hapus bot, mengatur level bot, dan host aktif menjalankan giliran bot.
 - ✅ Adapter `GameWire` membaca/menulis struktur data web v44 (`order`, `hands`, `turn`, `last`, `passed`, `dec`, `fin`, `log`, dan seterusnya).
 - ✅ Aksi pemain dan keputusan kartu murni memakai transaksi Firebase; versi `VMAJ` dicek sebelum state dipakai.
+- ✅ Perbaikan kompatibilitas web ↔ Android: `VMAJ` sekarang `v44` (web memakai `VER.split('.')[0]` = `v44`, sebelumnya app memakai `44` sehingga game yang dimulai host web ditolak dan app tertahan di ruang tunggu), `stopped` ditulis sebagai objek `{pid: true}` seperti web, dan penanda `x` (lewat) dari web yang bernilai angka `1` ikut terbaca
+- ✅ Dialog Multiplayer otomatis tertutup setelah berhasil buat / gabung room (sebelumnya tertinggal di atas ruang tunggu kalau masuk lewat GABUNG)
 - 🟡 Failover host saat host putus / AFK mulai ditangani di Tahap 3b melalui effective driver. Hak administrasi lobby (tambah/hapus bot dan mulai game pertama) tetap milik host asli.
 - ✅ Pemolesan visual awal dialog Multiplayer dan Lobby: panel felt gelap, aksen emas, kode room sebagai fokus, daftar pemain berbaris, dan tombol host lebih terstruktur.
 
@@ -68,11 +70,17 @@ Catatan: source sudah ditambahkan. Build Android penuh belum dijalankan di lingk
   - ⬜ Validasi runtime dua klien (Android ↔ web) dan build release masih wajib.
 
 ### 🟡 Tahap 4: voice chat
-- ⬜ Suara antar pemain (WebRTC mesh, sinyal lewat Firebase `voice` + `vsig`)
-- ⬜ Mute, mode open mic / push-to-talk, tombol keluar voice
-- ✅ Indikator siapa yang lagi ngomong: cincin hijau + 🎙 di kursi pemain, baris lobby, dan tombol mic sendiri (`VoiceChatManager.speakingIds`, level mic dari sampel audio, level lawan dari statistik `inbound-rtp`, ambang sama dengan web)
-- ⬜ Status sambungan per pemain (sekarang baru ringkasan "tersambung x/y")
-- ⬜ Izin `RECORD_AUDIO` diminta saat pertama kali gabung voice
+- 🟡 Suara antar pemain (WebRTC mesh, sinyal lewat Firebase `voice` + `vsig`, kompatibel dengan web v44). Sudah jalan di kode; masih perlu validasi audio Android ↔ web, relay TURN, dan reconnect di perangkat nyata
+- ✅ Perbaikan force close saat gabung voice (aturan R8 `org.jni_zero.**`, `catch Throwable`, izin `MODIFY_AUDIO_SETTINGS`)
+- ✅ Mute: tap tombol mic saat mode open mic (🎙 / 🔇)
+- ✅ Mode open mic / tahan-ngomong (push-to-talk), pilihan tersimpan (`ptt`, sama dengan `k13ptt` di web). Mode tahan: mulai mute, tahan tombol ✋ untuk bicara, lepas untuk mute
+- ✅ Tombol **Keluar** voice (baris voice di lobby dan layar main)
+- ✅ Voice hanya bisa dimulai kalau ada minimal 2 pemain asli di room (sama dengan web)
+- ✅ Indikator siapa yang lagi ngomong: cincin hijau + 🎙 di kursi pemain, baris lobby, dan tombol mic sendiri (`VoiceChatManager.speakingIds`; level mic dari sampel audio, level lawan dari statistik `inbound-rtp`; ambang sama dengan web)
+- ✅ Status sambungan per pemain (`peerState`): `VOICE ✓ / … / ✕` di lobby, `VC ✓ / … / ✕` di kursi, plus ringkasan "nyambung x/y" di baris voice
+- ✅ Izin `RECORD_AUDIO` diminta saat pertama kali gabung voice
+- ⬜ Validasi runtime dua klien (Android ↔ web): audio dua arah, jaringan seluler/CGNAT lewat TURN, reconnect, app ke background, audio focus saat ada telepon
+- ⬜ Peringatan "mic diblok sistem" (ada di web, belum di Android)
 
 ### ⬜ Tahap 5: pemolesan
 - ⬜ Meter FPS (opsional)
@@ -86,10 +94,10 @@ Catatan: source sudah ditambahkan. Build Android penuh belum dijalankan di lingk
 - Presence Android kini menulis heartbeat dan mendaftarkan `onDisconnect`. Ketepatan status saat proses dihentikan dan kompatibilitas penuh dengan web tetap perlu diuji pada perangkat nyata.
 
 ## Keputusan teknis berikutnya
-- **Room campur web + Android:** sudah dipilih. Kedua klien memakai struktur Firebase dan `VMAJ` yang sama (`44`).
+- **Room campur web + Android:** sudah dipilih. Kedua klien memakai struktur Firebase dan `VMAJ` yang sama (`v44`).
 - **Presence dan failover:** implementasi awal 3b sudah ditambahkan; uji silang runtime Android ↔ web tetap diperlukan.
 - **Chat dan reaksi:** implementasi awal 3c sudah ditambahkan; uji silang runtime Android ↔ web tetap diperlukan.
-- **Voice chat:** WebRTC di Android membutuhkan library native berukuran besar. Putuskan di Tahap 4 apakah fitur ini tetap dipakai atau dicoret dari versi Android.
+- **Voice chat:** sudah dipilih, dipakai `io.github.webrtc-sdk:android` (libwebrtc). APK jadi jauh lebih besar (library native per ABI). Kalau ukuran jadi masalah, pertimbangkan `abiFilters` atau split APK per ABI.
 - **Tidak perlu di-port:** service worker (`sw.js`, cache offline) karena aset sudah ada di dalam APK, dan `build.sh` (minify JS) karena tidak ada JS di app ini.
 
 ## Cara rilis
@@ -126,3 +134,5 @@ Gambar kartu: Vecteezy.com (Set of poker cards, resource 53654344), Vecteezy Fre
 - This is an initial integration. Validate Android↔Web audio, TURN relay, reconnect, audio focus, and Android lifecycle on physical devices before treating Stage 4 as complete.
 - Perbaikan force close saat mic ditekan: R8 membuang kelas `org.jni_zero.*` yang dipanggil library native WebRTC lewat JNI. Aturan keep ada di `app/proguard-rules.pro`; `join()` juga menangkap `Throwable` supaya error native tidak mematikan app. Izin `MODIFY_AUDIO_SETTINGS` ditambahkan.
 - Indikator bicara memakai ambang yang sama dengan web (mic sendiri 0,02, pemain lain 0,03) dan menahan status 450 ms supaya tidak berkedip. Perlu dites di perangkat nyata, terutama sensitivitas mic dan echo.
+- Mode tahan-ngomong: tekan tombol mic (✋) = bicara, lepas = mute. Diatur lewat sentuhan `ACTION_DOWN` / `ACTION_UP` di `GameView.onTouchEvent`, bukan klik biasa.
+- Status sambungan per pemain memakai `PeerConnection.connectionState()` (CONNECTED = ✓, FAILED / DISCONNECTED / CLOSED = ✕, selain itu …). Status dan indikator bicara dipoll tiap 250 ms dari thread terpisah.

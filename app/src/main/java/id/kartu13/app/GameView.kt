@@ -31,6 +31,7 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.text.Layout
 import android.text.StaticLayout
+import android.text.TextUtils
 import android.text.TextPaint
 import android.view.MotionEvent
 import android.view.View
@@ -81,6 +82,8 @@ class GameView(ctx: Context) : View(ctx) {
     private val voice by lazy { VoiceChatManager(ctx, FirebaseRoom.database(ctx).reference, firebase.playerId) { status -> post { voiceStatus = status; invalidate() } } }
     private var voiceStatus = "Voice tidak aktif"
     private var waitingMicPermission = false
+    private var pttHeld = false
+    private var multiDialog: AlertDialog? = null
     private var roomState: FirebaseRoom.RoomState? = null
     private var multiplayer = false
     private var seatPids: List<String> = emptyList()
@@ -388,6 +391,8 @@ class GameView(ctx: Context) : View(ctx) {
             "chat" -> showChatDialog()
             "react" -> showReactionDialog()
             "voice" -> toggleVoice()
+            "vptt" -> voice.setPtt(!voice.isPtt())
+            "vleave" -> voice.leave()
             "lobbyStart" -> roomState?.let { firebase.startGame(it) { r -> if (r.isFailure) { roomMessage = r.exceptionOrNull()?.message ?: "Gagal mulai"; invalidate() } } }
             "lobbyExit" -> { voice.leave(); firebase.leave(); roomState = null; multiplayer = false; game = null; screen = Screen.HOME }
             "addBot" -> roomState?.let { st -> firebase.addBot(st.botLevel, st) { r -> if (r.isFailure) { roomMessage = r.exceptionOrNull()?.message ?: "Gagal tambah bot"; invalidate() } } }
@@ -451,6 +456,13 @@ class GameView(ctx: Context) : View(ctx) {
                     downCard = hits.lastOrNull { it.id == "card" && it.r.contains(e.x, e.y) }
                     if (downCard != null) handler.postDelayed(lpTask, 260L) // tahan sebentar = mulai nyeret kartu
                 }
+                if (screen == Screen.LOBBY || (screen == Screen.GAME && multiplayer)) { // tahan-ngomong: tekan tombol mic = bicara
+                    if (voice.isJoined() && voice.isPtt() && hits.any { it.id == "voice" && it.r.contains(e.x, e.y) }) {
+                        pttHeld = true
+                        voice.setMuted(false)
+                        invalidate()
+                    }
+                }
             }
             MotionEvent.ACTION_MOVE -> {
                 if (dragging) {
@@ -476,6 +488,7 @@ class GameView(ctx: Context) : View(ctx) {
             }
             MotionEvent.ACTION_UP -> {
                 handler.removeCallbacks(lpTask)
+                if (pttHeld) { pttHeld = false; voice.setMuted(true); invalidate() }
                 if (dragging) {
                     endDragState()
                     arnDone = true
@@ -500,6 +513,7 @@ class GameView(ctx: Context) : View(ctx) {
             }
             MotionEvent.ACTION_CANCEL -> {
                 handler.removeCallbacks(lpTask)
+                if (pttHeld) { pttHeld = false; voice.setMuted(true); invalidate() }
                 if (dragging) {
                     endDragState()
                     invalidate()
@@ -626,6 +640,23 @@ class GameView(ctx: Context) : View(ctx) {
     // cincin hijau di sekeliling elemen pemain yang lagi ngomong
     private fun speakRing(c: Canvas, r: RectF, rad: Float) {
         box(c, RectF(r.left - d(3f), r.top - d(3f), r.right + d(3f), r.bottom + d(3f)), 0, OKC, d(2.5f), rad + d(3f))
+    }
+
+    // baris voice: status + tombol mode (open mic / tahan) + keluar voice. Mengembalikan tinggi yang dipakai (0 kalau belum gabung voice)
+    private fun drawVoiceBar(c: Canvas, x0: Float, x1: Float, y: Float): Float {
+        if (!voice.isJoined()) return 0f
+        val h = d(26f)
+        val g = d(6f)
+        val kr = RectF(x1 - d(54f), y, x1, y + h)
+        val mr = RectF(kr.left - g - d(72f), y, kr.left - g, y + h)
+        tp.reset()
+        tp.isAntiAlias = true
+        tp.textSize = d(9f)
+        val shown = TextUtils.ellipsize(voiceStatus, tp, max(0f, mr.left - g - x0), TextUtils.TruncateAt.END).toString()
+        txt(c, shown, x0, y + h / 2 + d(3f), d(9f), OKC, Paint.Align.LEFT)
+        button(c, mr, if (voice.isPtt()) "TAHAN" else "OPEN MIC", "vptt", true, true, -1, 9f)
+        button(c, kr, "KELUAR", "vleave", true, true, -1, 9f)
+        return h
     }
 
     private fun drawCard(c: Canvas, id: Int, r: RectF) {
@@ -875,6 +906,8 @@ class GameView(ctx: Context) : View(ctx) {
 
         val dialog = AlertDialog.Builder(context).setView(root).create()
         multiplayerDialog = dialog
+        multiDialog = dialog
+        dialog.setOnDismissListener { if (multiDialog === dialog) multiDialog = null }
         cancel.setOnClickListener { dialog.dismiss() }
         dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         dialog.setOnShowListener {
@@ -968,12 +1001,17 @@ class GameView(ctx: Context) : View(ctx) {
 
     private fun toggleVoice() {
         if (!voice.isJoined()) {
+            val humans = roomState?.players?.count { !it.bot } ?: 2
+            if (humans < 2) { // sama dengan web: voice butuh minimal 2 pemain asli
+                Toast.makeText(context, "Voice butuh minimal 2 pemain asli di room.", Toast.LENGTH_SHORT).show()
+                return
+            }
             if (android.os.Build.VERSION.SDK_INT >= 23 && context.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
                 waitingMicPermission = true
                 (context as? android.app.Activity)?.let { (it as? MainActivity)?.requestMicPermission() }
                     ?: run { voiceStatus = "Tidak bisa meminta izin mikrofon" }
             } else firebase.currentCode?.let { voice.join(it) }
-        } else voice.toggleMute()
+        } else if (!voice.isPtt()) voice.toggleMute() // mode tahan-ngomong diurus sentuhan tahan di onTouchEvent
         invalidate()
     }
 
@@ -1043,7 +1081,14 @@ class GameView(ctx: Context) : View(ctx) {
         reactionDialog?.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
     }
 
+    // tutup dialog Multiplayer (jalur GABUNG membuka dialog kedua, jadi dialog pertama harus ditutup di sini)
+    private fun dismissMultiDialog() {
+        try { multiDialog?.dismiss() } catch (_: Throwable) {}
+        multiDialog = null
+    }
+
     private fun enterRoom(code: String) {
+        dismissMultiDialog()
         firebase.listenReactions(code) { pid, name, emoji ->
             if (pid != firebase.playerId) {
                 snd.msg()
@@ -1057,6 +1102,7 @@ class GameView(ctx: Context) : View(ctx) {
             }.onSuccess { state ->
                 roomState = state
                 roomMessage = ""
+                dismissMultiDialog()
                 if (state.status == "lobby") {
                     multiplayer = false
                     screen = Screen.LOBBY
@@ -1144,14 +1190,14 @@ class GameView(ctx: Context) : View(ctx) {
         txt(c, "PEMAIN", boxR.left + d(14f), boxR.top + d(24f), d(11f), GOLD, Paint.Align.LEFT, true)
         txt(c, "${state.players.size}/4", boxR.left + d(72f), boxR.top + d(24f), d(10f), MUTE, Paint.Align.LEFT, true)
         val lobbyMic = RectF(boxR.right - d(148f), boxR.top + d(5f), boxR.right - d(112f), boxR.top + d(37f))
-        button(c, lobbyMic, if (!voice.isJoined()) "🎤" else if (voice.isMuted()) "🔇" else "🎙", "voice", true, true, -1, 12f)
+        button(c, lobbyMic, if (!voice.isJoined()) "🎤" else if (voice.isMuted()) (if (voice.isPtt()) "✋" else "🔇") else "🎙", "voice", true, true, -1, 12f)
         if (voice.isSpeaking(firebase.playerId)) speakRing(c, lobbyMic, d(10f))
         button(c, RectF(boxR.right - d(104f), boxR.top + d(5f), boxR.right - d(50f), boxR.top + d(37f)), "CHAT", "chat", true, true, -1, 8f)
         button(c, RectF(boxR.right - d(44f), boxR.top + d(5f), boxR.right - d(8f), boxR.top + d(37f)), "☺", "react", true, true, -1, 12f)
         val srv = if (!state.connected) "SERVER OFFLINE" else state.myPing?.let { "SERVER · ${it} ms" } ?: "SERVER ONLINE"
         txt(c, srv, boxR.right - d(14f), boxR.top + d(51f), d(8f), if (state.connected) OKC else BADC, Paint.Align.RIGHT, true)
-        if (voice.isJoined()) txt(c, voiceStatus, boxR.left + d(12f), boxR.top + d(51f), d(8f), OKC, Paint.Align.LEFT)
-        var yy = boxR.top + d(76f)
+        val vbH = drawVoiceBar(c, boxR.left + d(12f), boxR.right - d(12f), boxR.top + d(58f))
+        var yy = boxR.top + d(76f) + (if (vbH > 0f) vbH + d(6f) else 0f)
         state.players.forEachIndexed { index, p ->
             val row = RectF(boxR.left + d(9f), yy - d(17f), boxR.right - d(9f), yy + d(15f))
             if (index % 2 == 0) box(c, row, Color.argb(45, 255, 255, 255), 0, 0f, d(8f))
@@ -1161,8 +1207,11 @@ class GameView(ctx: Context) : View(ctx) {
             txt(c, label, row.left + d(9f), yy + d(5f), d(14f), if (isMe) GOLD else INK, Paint.Align.LEFT, isMe)
             if (voice.isSpeaking(p.id)) {
                 box(c, row, 0, OKC, d(1.5f), d(8f))
-                txt(c, "🎙", row.right - d(96f), yy + d(5f), d(13f), OKC, Paint.Align.CENTER)
+                txt(c, "🎙", row.right - d(88f), yy + d(5f), d(13f), OKC, Paint.Align.CENTER)
             }
+            val vs = voice.peerState(p.id)
+            if (vs != 0) txt(c, if (vs == 2) "VOICE ✓" else if (vs == 3) "VOICE ✕" else "VOICE …", row.right - d(100f), yy + d(4f), d(8f),
+                if (vs == 2) OKC else if (vs == 3) BADC else GOLD, Paint.Align.RIGHT, true)
             val status = firebase.playerStatus(p.id, state.players)
             val badge = if (isHost) "HOST" else ""
             if (badge.isNotEmpty()) txt(c, badge, row.right - d(9f), yy - d(2f), d(8f), GOLD, Paint.Align.RIGHT, true)
@@ -1462,12 +1511,16 @@ class GameView(ctx: Context) : View(ctx) {
         button(c, RectF(tbx + tbw + d(6f), y, tbx + 2 * tbw + d(6f), y + d(36f)), "Suara", "sfx", true, !snd.sfxOn)
         if (multiplayer) {
             val gameMic = RectF(l + w - m - d(160f), y, l + w - m - d(124f), y + d(36f))
-            button(c, gameMic, if (!voice.isJoined()) "🎤" else if (voice.isMuted()) "🔇" else "🎙", "voice", true, true, -1, 12f)
+            button(c, gameMic, if (!voice.isJoined()) "🎤" else if (voice.isMuted()) (if (voice.isPtt()) "✋" else "🔇") else "🎙", "voice", true, true, -1, 12f)
             if (voice.isSpeaking(firebase.playerId)) speakRing(c, gameMic, d(10f))
             button(c, RectF(l + w - m - d(116f), y, l + w - m - d(60f), y + d(36f)), "CHAT", "chat", true, true, -1, 9f)
             button(c, RectF(l + w - m - d(52f), y, l + w - m, y + d(36f)), "☺", "react", true, true, -1, 13f)
         } else txt(c, "Level: " + LEVELS[lv], l + w - m, y + d(24f), d(13f), MUTE, Paint.Align.RIGHT)
         y += d(44f)
+        if (multiplayer) {
+            val vb = drawVoiceBar(c, l + m, l + w - m, y)
+            if (vb > 0f) y += vb + d(6f)
+        }
 
         val pend = g.dec.isNotEmpty()
         val cur = g.order[g.turn]
@@ -1501,6 +1554,9 @@ class GameView(ctx: Context) : View(ctx) {
                     speakRing(c, r, d(12f))
                     txt(c, "🎙", r.right - d(14f), r.top + d(18f), d(12f), OKC, Paint.Align.CENTER)
                 }
+                val vs = voice.peerState(pid)
+                if (vs != 0) txt(c, if (vs == 2) "VC ✓" else if (vs == 3) "VC ✕" else "VC …", r.left + d(8f), r.top + d(14f), d(8f),
+                    if (vs == 2) OKC else if (vs == 3) BADC else GOLD, Paint.Align.LEFT, true)
                 val status = firebase.playerStatus(pid, roomState?.players ?: emptyList())
                 val statusText = when (status.state) {
                     "bot" -> "🤖 BOT"
