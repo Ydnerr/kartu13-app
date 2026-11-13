@@ -1,11 +1,11 @@
 # Kartu 13 (Android, native)
 
-Port native Kotlin dari game web "Kartu 13 / Poker 13". Tanpa WebView, tanpa library pihak ketiga.
+Port native Kotlin dari game web "Kartu 13 / Poker 13". Tanpa WebView; Firebase SDK resmi dipakai untuk multiplayer.
 
 ## Status
-Tahap 1, 2, 2.5, dan 2.6 selesai. Sisanya di roadmap di bawah. Acuan fitur: web `index.html` + `game.js` v44.11 (tanda ✅ = sudah ada di app Android, ⬜ = belum).
+Tahap 1, 2, 2.5, dan 2.6 selesai. Implementasi awal Tahap 3a sudah ditambahkan; lihat batasan yang masih tersisa di bawah. Acuan fitur: web `index.html` + `game.js` v44.11 (tanda ✅ = sudah ada di app Android, ⬜ = belum).
 
-Prinsip: tanpa WebView, dan sebisa mungkin tanpa library pihak ketiga. Setiap tahap harus bisa di-build dan dimainkan sendiri sebelum lanjut ke tahap berikutnya.
+Prinsip: tanpa WebView. Setiap tahap harus bisa di-build dan dimainkan sendiri sebelum lanjut ke tahap berikutnya.
 
 ## Roadmap
 
@@ -39,15 +39,18 @@ Prinsip: tanpa WebView, dan sebisa mungkin tanpa library pihak ketiga. Setiap ta
 - ✅ Menu tutorial: pilih terpandu, aturan geser, atau ringkasan teks (`openTut`); tombol "Aturan main" di layar depan jadi "Tutorial"
 - ✅ Teks tutorial disesuaikan buat Android (tombol Mainkan, tanpa petunjuk keyboard PC). Isi ada di `Tutorial.kt`
 
-### ⬜ Tahap 3: multiplayer Firebase (2 sampai 4 pemain)
-Dipecah supaya bisa dirilis bertahap.
-- **3a. Room dan sinkronisasi**
-  - ⬜ Isi nama pemain (maks 14 huruf, tersimpan)
-  - ⬜ Buat room (kode 5 digit) dan join pakai kode, kode room terakhir diingat
-  - ⬜ Ruang tunggu: daftar pemain, tanda host, tombol Mulai (min 2 pemain), Keluar
-  - ⬜ Host bisa tambah / hapus bot di ruang tunggu (min 2 manusia, maks 4 kursi) dan atur level bot
-  - ⬜ Aksi main lewat transaksi Firebase (`play`, `decideCall`), cek versi data `VMAJ`
-  - ⬜ "Host efektif": kalau host putus, pemain aktif berikutnya yang jalankan bot (`driver`, `botTick`)
+### 🟡 Tahap 3: multiplayer Firebase (2 sampai 4 pemain)
+Implementasi awal **3a** sudah masuk ke source:
+- ✅ Firebase Realtime Database SDK resmi, konfigurasi memakai Firebase project yang sama dengan web.
+- ✅ Nama pemain maksimal 14 karakter dan disimpan di SharedPreferences.
+- ✅ ID pemain lokal tetap, buat room 5 digit, join room, dan ingat kode room terakhir.
+- ✅ Lobby: daftar pemain, penanda host, keluar room, dan mulai game minimal 2 pemain.
+- ✅ Host dapat tambah/hapus bot, mengatur level bot, dan host aktif menjalankan giliran bot.
+- ✅ Adapter `GameWire` membaca/menulis struktur data web v44 (`order`, `hands`, `turn`, `last`, `passed`, `dec`, `fin`, `log`, dan seterusnya).
+- ✅ Aksi pemain dan keputusan kartu murni memakai transaksi Firebase; versi `VMAJ` dicek sebelum state dipakai.
+- ⬜ Failover host saat host putus / AFK belum selesai. Ini bergantung pada presence Tahap 3b; untuk saat ini bot hanya diproses oleh host yang sedang aktif.
+
+Catatan: source sudah ditambahkan, tetapi build Android penuh belum dijalankan di lingkungan ini karena Gradle/Android SDK tidak tersedia. Build dan uji dua perangkat (Android + web) masih wajib sebelum dianggap rilis.
 - **3b. Presence**
   - ⬜ Online / away / putus / AFK, heartbeat 5 detik, `onDisconnect` (`presUp`, `beat`, `pinfo`)
   - ⬜ Bot ambil alih setelah pemain AFK (jeda 8 detik, maks 20 detik pindah app)
@@ -68,10 +71,16 @@ Dipecah supaya bisa dirilis bertahap.
 - ⬜ Halaman kredit dan versi, tombol keluar room yang aman (back button)
 - ⬜ Layar tetap nyala selama di room (sudah aktif lewat `FLAG_KEEP_SCREEN_ON`)
 
-## Keputusan teknis yang perlu diambil sebelum Tahap 3 dan 4
-- **Firebase tanpa SDK:** Realtime Database punya REST API + streaming (SSE) yang bisa dipanggil pakai `HttpURLConnection`, jadi prinsip "tanpa library" bisa dipertahankan. Kekurangannya, transaksi (`transaction`) harus dibuat sendiri pakai ETag, dan `onDisconnect` nggak ada di REST. Alternatifnya pakai Firebase SDK resmi (lebih gampang, tapi butuh `google-services.json` dan menambah ukuran APK).
-- **Satu room campur web + Android:** kalau mau, struktur data di Firebase harus persis sama dengan web dan `VMAJ` harus cocok (sekarang `v44`). Kalau Android nanti pakai format sendiri, pemain web dan Android nggak bisa satu room.
-- **Voice chat:** WebRTC di Android butuh library (libwebrtc, puluhan MB). Ini satu-satunya bagian yang praktis nggak bisa tanpa library. Putuskan nanti di Tahap 4 apakah dipakai, atau voice dicoret dari versi Android.
+## Catatan konfigurasi Firebase Android
+- Dependensi `firebase-database` memakai Firebase Android BoM `35.2.0`.
+- Konfigurasi Firebase Android diinisialisasi dari konfigurasi publik yang sama dengan web, jadi `google-services.json` belum dipakai.
+- API key Firebase yang tertanam di aplikasi klien bukan kredensial rahasia. Batas keamanan sebenarnya ada pada Realtime Database Rules. Jangan memakai aturan `read/write: true` untuk database produksi; atur autentikasi dan validasi rules sebelum room dibuka ke publik.
+- Aplikasi Android belum mengimplementasikan presence / `onDisconnect`. Jika aplikasi ditutup paksa, entri pemain bisa tertinggal di room sampai dibersihkan. Itu bagian Tahap 3b.
+
+## Keputusan teknis berikutnya
+- **Room campur web + Android:** sudah dipilih. Kedua klien memakai struktur Firebase dan `VMAJ` yang sama (`44`).
+- **Presence dan failover:** lanjutkan di Tahap 3b dengan heartbeat dan `onDisconnect`, lalu pindahkan pemilihan host efektif ke mekanisme presence.
+- **Voice chat:** WebRTC di Android membutuhkan library native berukuran besar. Putuskan di Tahap 4 apakah fitur ini tetap dipakai atau dicoret dari versi Android.
 - **Tidak perlu di-port:** service worker (`sw.js`, cache offline) karena aset sudah ada di dalam APK, dan `build.sh` (minify JS) karena tidak ada JS di app ini.
 
 ## Cara rilis

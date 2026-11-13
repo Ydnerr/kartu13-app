@@ -3,6 +3,12 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+dependencies {
+    // Firebase Realtime Database: SDK resmi untuk listener realtime dan transaksi atomik.
+    implementation(platform("com.google.firebase:firebase-bom:35.2.0"))
+    implementation("com.google.firebase:firebase-database")
+}
+
 android {
     namespace = "id.kartu13.app"
     compileSdk = 34
