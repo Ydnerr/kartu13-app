@@ -2,15 +2,24 @@ name: Build & Release APK
 
 on:
   push:
-    tags: ['v*']          # contoh: git tag v1.0.0 && git push origin v1.0.0
-  workflow_dispatch:      # atau jalankan manual dari tab Actions (hasilnya jadi artifact, bukan Release)
+    branches: [main]      # tiap push ke main: build + update release "latest" (tanpa perlu tag)
+    paths-ignore:         # perubahan dokumentasi saja nggak perlu build ulang
+      - '**.md'
+      - '.gitignore'
+    tags: ['v*']          # rilis resmi: git tag v1.0.0 && git push origin v1.0.0 (jarang dipakai)
+  workflow_dispatch:      # atau jalankan manual dari tab Actions (hasilnya juga masuk release "latest")
 
 permissions:
   contents: write
 
+concurrency:              # push beruntun: build lama dibatalkan, yang terbaru saja yang jalan
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
@@ -23,7 +32,7 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Versi dari tag
+      - name: Tentukan versi
         run: |
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             V="${GITHUB_REF_NAME#v}"
@@ -82,16 +91,33 @@ jobs:
       - name: Ganti nama APK
         run: |
           cp app/build/outputs/apk/release/app-release.apk "Kartu13-${VERSION_NAME}.apk"
+          cp app/build/outputs/apk/release/app-release.apk "Kartu13-latest.apk"   # nama tetap, buat link unduh yang stabil
           ls -la Kartu13-*.apk
 
+      # Cadangan saja. Link artifact butuh login GitHub dan kadaluarsa, jadi unduh dari Releases.
       - uses: actions/upload-artifact@v4
         with:
           name: Kartu13-apk
-          path: Kartu13-*.apk
+          path: Kartu13-${{ env.VERSION_NAME }}.apk
+          retention-days: 7
 
-      - name: Upload ke GitHub Release
+      # Build dari push ke main / manual: satu release "latest" yang ditimpa terus (cuma 1 tag, nggak numpuk)
+      - name: Update release "latest"
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --cleanup-tag --yes || true
+          gh release create latest Kartu13-latest.apk \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --title "Build terbaru (#${GITHUB_RUN_NUMBER})" \
+            --notes "Build otomatis dari commit ${GITHUB_SHA::7}, versi ${VERSION_NAME}. Release ini ditimpa setiap push ke main."
+
+      # Build dari tag v*: rilis resmi dengan nomor versi
+      - name: Upload ke GitHub Release (tag)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: Kartu13-*.apk
+          files: Kartu13-${{ env.VERSION_NAME }}.apk
           generate_release_notes: true

@@ -102,13 +102,14 @@ Catatan: source sudah ditambahkan. Build Android penuh belum dijalankan di lingk
 
 ## Cara rilis
 1. Taruh seluruh isi folder ini di root sebuah repo GitHub (repo baru, terpisah dari repo GitHub Pages).
-2. Push tag versi:
+2. **Build harian, tanpa tag:** cukup `git push` ke `main`. GitHub Actions build APK lalu menimpa release **latest** (tab Releases, ditandai pre-release). Nama file tetap `Kartu13-latest.apk`, jadi link unduhnya stabil: `https://github.com/<user>/<repo>/releases/download/latest/Kartu13-latest.apk`. Perubahan yang cuma menyentuh file `.md` tidak memicu build. Push beruntun membatalkan build lama.
+3. **Rilis resmi (jarang):** push tag versi, hasilnya release baru bernomor.
    ```
    git tag v1.0.0
    git push origin v1.0.0
    ```
-3. GitHub Actions build APK lalu otomatis upload ke **Releases** (tab Actions -> "Build & Release APK").
-   Jalankan manual lewat tab Actions juga bisa, tapi hasilnya cuma artifact, bukan Release.
+4. Jalankan manual lewat tab Actions juga bisa; hasilnya juga masuk release **latest**.
+5. Jangan unduh lewat link artifact (`.../actions/runs/.../artifacts/...`): link itu butuh login GitHub di browser yang sama, kadaluarsa (workflow menyimpannya 7 hari), dan memberi 404 kalau belum login / sudah kadaluarsa. Pakai halaman Releases.
 
 ## Tanda tangan (penting kalau mau update antar-rilis)
 Tanpa secret, workflow bikin kunci sementara baru tiap build, jadi APK versi baru **tidak bisa menimpa** versi lama
