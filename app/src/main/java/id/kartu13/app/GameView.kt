@@ -740,7 +740,7 @@ class GameView(ctx: Context) : View(ctx) {
             hint = "Nama pemain (maks. 14 karakter)"
             setText(firebase.savedName())
             filters = arrayOf(InputFilter.LengthFilter(14))
-            singleLine = true
+            setSingleLine(true)
         }
         val wrap = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -768,7 +768,7 @@ class GameView(ctx: Context) : View(ctx) {
                     setText(firebase.currentCode ?: "")
                     inputType = InputType.TYPE_CLASS_NUMBER
                     filters = arrayOf(InputFilter.LengthFilter(5))
-                    singleLine = true
+                    setSingleLine(true)
                 }
                 AlertDialog.Builder(context).setTitle("Join room").setView(codeInput)
                     .setPositiveButton("Gabung") { _, _ ->
