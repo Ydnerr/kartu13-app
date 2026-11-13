@@ -6,12 +6,14 @@ import android.text.InputFilter
 import android.text.InputType
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.TextView
+import android.view.Gravity
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.LinearGradient
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
 import android.graphics.Paint
 import android.graphics.RadialGradient
 import android.graphics.RectF
@@ -594,53 +596,14 @@ class GameView(ctx: Context) : View(ctx) {
     }
 
     private fun button(c: Canvas, r: RectF, label: String, id: String, enabled: Boolean, ghost: Boolean, idx: Int = -1, fs: Float = 15f) {
-        val a = if (enabled) 255 else 105
-        val radius = d(13f)
-        val rr = RectF(r)
-        // Elevation and layered surface make controls read as deliberate UI, not flat canvas labels.
-        paint.style = Paint.Style.FILL
-        paint.shader = null
-        paint.color = Color.argb(if (enabled) 72 else 28, 0, 0, 0)
-        c.drawRoundRect(RectF(rr.left, rr.top + d(3f), rr.right, rr.bottom + d(3f)), radius, radius, paint)
+        val a = if (enabled) 255 else 90
         if (ghost) {
-            paint.color = Color.argb(if (enabled) 42 else 18, 224, 180, 76)
-            c.drawRoundRect(rr, radius, radius, paint)
-            paint.shader = LinearGradient(rr.left, rr.top, rr.right, rr.bottom,
-                intArrayOf(fade(Color.WHITE, if (enabled) 24 else 10), fade(GOLD, if (enabled) 10 else 4)), null, Shader.TileMode.CLAMP)
-            c.drawRoundRect(rr, radius, radius, paint)
-            paint.shader = null
-            paint.style = Paint.Style.STROKE
-            paint.strokeWidth = d(1.15f)
-            paint.color = fade(GOLD, a)
-            c.drawRoundRect(rr, radius, radius, paint)
-            paint.style = Paint.Style.FILL
-            // small gold marker at the left edge
-            paint.color = fade(GOLD, if (enabled) 190 else 65)
-            c.drawRoundRect(RectF(rr.left + d(7f), rr.top + d(10f), rr.left + d(10f), rr.bottom - d(10f)), d(2f), d(2f), paint)
+            box(c, r, 0, fade(GOLD, a), d(1.5f), d(10f))
+            txt(c, label, r.centerX(), r.centerY() + d(fs * 0.37f), d(fs), fade(GOLD, a), Paint.Align.CENTER, true)
         } else {
-            val top = if (enabled) Color.parseColor("#f4d47b") else Color.parseColor("#746a50")
-            val bottom = if (enabled) Color.parseColor("#c18b2d") else Color.parseColor("#514a39")
-            paint.shader = LinearGradient(rr.left, rr.top, rr.left, rr.bottom, top, bottom, Shader.TileMode.CLAMP)
-            c.drawRoundRect(rr, radius, radius, paint)
-            paint.shader = null
-            paint.style = Paint.Style.STROKE
-            paint.strokeWidth = d(1f)
-            paint.color = fade(Color.WHITE, if (enabled) 72 else 25)
-            c.drawRoundRect(RectF(rr.left + d(.7f), rr.top + d(.7f), rr.right - d(.7f), rr.bottom - d(.7f)), radius, radius, paint)
-            paint.style = Paint.Style.FILL
-            // restrained highlight along the top edge
-            paint.color = fade(Color.WHITE, if (enabled) 45 else 12)
-            c.drawRoundRect(RectF(rr.left + d(10f), rr.top + d(2f), rr.right - d(10f), rr.top + d(3.5f)), d(1f), d(1f), paint)
+            box(c, r, fade(GOLD, a), 0, 0f, d(10f))
+            txt(c, label, r.centerX(), r.centerY() + d(fs * 0.37f), d(fs), fade(DARK, a), Paint.Align.CENTER, true)
         }
-        tp.reset()
-        tp.isAntiAlias = true
-        tp.textSize = d(fs)
-        tp.color = fade(if (ghost) GOLD else Color.parseColor("#211907"), a)
-        tp.textAlign = Paint.Align.CENTER
-        tp.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-        tp.setShadowLayer(d(1.5f), 0f, d(1f), Color.argb(if (enabled) 90 else 25, 0, 0, 0))
-        c.drawText(label, rr.centerX(), rr.centerY() - (tp.ascent() + tp.descent()) / 2f, tp)
-        tp.clearShadowLayer()
         if (enabled) hits.add(Hit(r, id, idx))
     }
 
@@ -777,62 +740,194 @@ class GameView(ctx: Context) : View(ctx) {
 
     private fun openMultiplayerDialog() {
         roomMessage = ""
+        val pad = d(20f).toInt()
+        val root = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, d(20f).toInt(), pad, d(16f).toInt())
+            background = GradientDrawable().apply {
+                setColor(Color.rgb(3, 40, 29))
+                cornerRadius = d(20f)
+                setStroke(d(1f).toInt(), Color.argb(150, 224, 180, 76))
+            }
+        }
+        val title = TextView(context).apply {
+            text = "MULTIPLAYER"
+            textSize = 21f
+            setTextColor(GOLD)
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
+            letterSpacing = .06f
+            gravity = Gravity.CENTER
+        }
+        root.addView(title, LinearLayout.LayoutParams(-1, -2))
+        val subtitle = TextView(context).apply {
+            text = "Buat meja baru atau bergabung dengan teman."
+            textSize = 14f
+            setTextColor(INK)
+            gravity = Gravity.CENTER
+            setLineSpacing(d(3f), 1f)
+            setPadding(0, d(7f).toInt(), 0, d(17f).toInt())
+        }
+        root.addView(subtitle, LinearLayout.LayoutParams(-1, -2))
+        val label = TextView(context).apply {
+            text = "NAMA PEMAIN"
+            textSize = 10f
+            setTextColor(MUTE)
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            letterSpacing = .1f
+        }
+        root.addView(label)
         val nameInput = EditText(context).apply {
-            hint = "Nama pemain (maks. 14 karakter)"
+            hint = "Masukkan nama (maks. 14 karakter)"
             setText(firebase.savedName())
             filters = arrayOf(InputFilter.LengthFilter(14))
             setSingleLine(true)
+            textSize = 16f
+            setTextColor(INK)
+            setHintTextColor(Color.rgb(119, 151, 137))
+            background = GradientDrawable().apply {
+                setColor(Color.rgb(5, 31, 24))
+                cornerRadius = d(10f)
+                setStroke(d(1f).toInt(), Color.argb(170, 224, 180, 76))
+            }
+            setPadding(d(12f).toInt(), d(10f).toInt(), d(12f).toInt(), d(10f).toInt())
         }
-        val wrap = LinearLayout(context).apply {
+        val inputLp = LinearLayout.LayoutParams(-1, d(48f).toInt())
+        inputLp.topMargin = d(7f).toInt()
+        root.addView(nameInput, inputLp)
+
+        fun actionButton(text: String, primary: Boolean, onClick: () -> Unit): TextView {
+            return TextView(context).apply {
+                this.text = text
+                textSize = 12f
+                typeface = Typeface.create("sans-serif", Typeface.BOLD)
+                gravity = Gravity.CENTER
+                setTextColor(if (primary) Color.rgb(35, 27, 8) else GOLD)
+                background = GradientDrawable(
+                    if (primary) GradientDrawable.Orientation.TOP_BOTTOM else GradientDrawable.Orientation.LEFT_RIGHT,
+                    if (primary) intArrayOf(Color.rgb(244, 212, 123), Color.rgb(193, 139, 45)) else intArrayOf(Color.rgb(10, 52, 39), Color.rgb(7, 38, 30))
+                ).apply {
+                    cornerRadius = d(11f)
+                    setStroke(d(1f).toInt(), if (primary) Color.argb(150, 255, 239, 183) else Color.argb(210, 224, 180, 76))
+                }
+                isClickable = true
+                isFocusable = true
+                setPadding(d(5f).toInt(), 0, d(5f).toInt(), 0)
+                setOnClickListener { onClick() }
+            }
+        }
+        val buttons = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        fun buttonLp(weight: Float, margin: Int = 0) = LinearLayout.LayoutParams(0, d(46f).toInt(), weight).apply {
+            if (margin > 0) marginStart = margin
+        }
+        val join = actionButton("GABUNG", false) {
+            val n = nameInput.text.toString().trim()
+            if (n.isEmpty()) { roomMessage = "Nama pemain wajib diisi."; invalidate(); return@actionButton }
+            showJoinRoomDialog(n)
+        }
+        val cancel = actionButton("BATAL", false) { /* click handler attached after dialog creation */ }
+        val create = actionButton("BUAT ROOM", true) {
+            val n = nameInput.text.toString().trim()
+            if (n.isEmpty()) { roomMessage = "Nama pemain wajib diisi."; invalidate(); return@actionButton }
+            roomMessage = "Membuat room..."; invalidate()
+            firebase.createRoom(n) { result ->
+                if (result.isSuccess) enterRoom(result.getOrThrow())
+                else { roomMessage = result.exceptionOrNull()?.message ?: "Gagal membuat room."; invalidate() }
+            }
+        }
+        val gap = d(7f).toInt()
+        buttons.addView(join, buttonLp(1f))
+        buttons.addView(cancel, buttonLp(.78f, gap))
+        buttons.addView(create, buttonLp(1.18f, gap))
+        val buttonsLp = LinearLayout.LayoutParams(-1, d(46f).toInt())
+        buttonsLp.topMargin = d(18f).toInt()
+        root.addView(buttons, buttonsLp)
+
+        val dialog = AlertDialog.Builder(context).setView(root).create()
+        cancel.setOnClickListener { dialog.dismiss() }
+        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        dialog.setOnShowListener {
+            dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            dialog.window?.setLayout((w * .94f).toInt().coerceAtLeast(d(280f).toInt()), -2)
+        }
+        dialog.show()
+        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        dialog.window?.setLayout((w * .94f).toInt().coerceAtLeast(d(280f).toInt()), -2)
+    }
+
+    private fun showJoinRoomDialog(name: String) {
+        val pad = d(20f).toInt()
+        val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(d(20f).toInt(), d(8f).toInt(), d(20f).toInt(), 0)
-            addView(nameInput)
+            setPadding(pad, d(20f).toInt(), pad, d(16f).toInt())
+            background = GradientDrawable().apply {
+                setColor(Color.rgb(3, 40, 29))
+                cornerRadius = d(18f)
+                setStroke(d(1f).toInt(), Color.argb(150, 224, 180, 76))
+            }
         }
-        AlertDialog.Builder(context)
-            .setTitle("Multiplayer")
-            .setMessage("Buat room baru atau masuk dengan kode 5 angka.")
-            .setView(wrap)
-            .setPositiveButton("Buat room") { _, _ ->
-                val n = nameInput.text.toString().trim()
-                if (n.isEmpty()) { roomMessage = "Nama pemain wajib diisi."; invalidate(); return@setPositiveButton }
-                roomMessage = "Membuat room..."; invalidate()
-                firebase.createRoom(n) { result ->
-                    if (result.isSuccess) enterRoom(result.getOrThrow())
-                    else { roomMessage = result.exceptionOrNull()?.message ?: "Gagal membuat room."; invalidate() }
-                }
+        root.addView(TextView(context).apply {
+            text = "GABUNG ROOM"
+            textSize = 20f
+            setTextColor(GOLD)
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
+            gravity = Gravity.CENTER
+        })
+        root.addView(TextView(context).apply {
+            text = "Masukkan kode 5 angka dari temanmu."
+            textSize = 14f
+            setTextColor(INK)
+            gravity = Gravity.CENTER
+            setPadding(0, d(7f).toInt(), 0, d(16f).toInt())
+        })
+        val codeInput = EditText(context).apply {
+            hint = "KODE ROOM"
+            setText(firebase.currentCode ?: "")
+            inputType = InputType.TYPE_CLASS_NUMBER
+            filters = arrayOf(InputFilter.LengthFilter(5))
+            setSingleLine(true)
+            textSize = 20f
+            gravity = Gravity.CENTER
+            setTextColor(INK)
+            setHintTextColor(Color.rgb(119, 151, 137))
+            background = GradientDrawable().apply {
+                setColor(Color.rgb(5, 31, 24)); cornerRadius = d(10f)
+                setStroke(d(1f).toInt(), Color.argb(170, 224, 180, 76))
             }
-            .setNeutralButton("Join room") { _, _ ->
-                val n = nameInput.text.toString().trim()
-                if (n.isEmpty()) { roomMessage = "Nama pemain wajib diisi."; invalidate(); return@setNeutralButton }
-                val codeInput = EditText(context).apply {
-                    hint = "Kode room 5 angka"
-                    setText(firebase.currentCode ?: "")
-                    inputType = InputType.TYPE_CLASS_NUMBER
-                    filters = arrayOf(InputFilter.LengthFilter(5))
-                    setSingleLine(true)
-                }
-                AlertDialog.Builder(context).setTitle("Join room").setView(codeInput)
-                    .setPositiveButton("Gabung") { _, _ ->
-                        roomMessage = "Menghubungkan..."; invalidate()
-                        firebase.joinRoom(codeInput.text.toString(), n) { result ->
-                            if (result.isSuccess) enterRoom(result.getOrThrow())
-                            else { roomMessage = result.exceptionOrNull()?.message ?: "Gagal join room."; invalidate() }
-                        }
-                    }.setNegativeButton("Batal", null).show()
+            setPadding(d(12f).toInt(), d(10f).toInt(), d(12f).toInt(), d(10f).toInt())
+        }
+        root.addView(codeInput, LinearLayout.LayoutParams(-1, d(50f).toInt()))
+        val dialog = AlertDialog.Builder(context).setView(root).create()
+        val row = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
+        fun smallButton(text: String, primary: Boolean, click: () -> Unit) = TextView(context).apply {
+            this.text = text; textSize = 12f; gravity = Gravity.CENTER
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
+            setTextColor(if (primary) Color.rgb(35, 27, 8) else GOLD)
+            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                if (primary) intArrayOf(Color.rgb(244, 212, 123), Color.rgb(193, 139, 45)) else intArrayOf(Color.rgb(10, 52, 39), Color.rgb(7, 38, 30))).apply {
+                cornerRadius = d(10f); setStroke(d(1f).toInt(), Color.argb(190, 224, 180, 76))
             }
-            .setNegativeButton("Batal", null)
-            .create().also { dialog ->
-                dialog.setOnShowListener {
-                    dialog.window?.setBackgroundDrawable(ColorDrawable(Color.rgb(7, 37, 28)))
-                    dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(GOLD)
-                    dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(GOLD)
-                    dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(MUTE)
-                    val titleId = context.resources.getIdentifier("alertTitle", "id", "android")
-                    if (titleId != 0) dialog.findViewById<android.widget.TextView>(titleId)?.setTextColor(GOLD)
-                    val messageId = context.resources.getIdentifier("message", "id", "android")
-                    dialog.findViewById<android.widget.TextView>(messageId)?.setTextColor(INK)
-                }
-            }.show()
+            setOnClickListener { click() }
+        }
+        val cancel = smallButton("BATAL", false) { dialog.dismiss() }
+        val join = smallButton("GABUNG ROOM", true) {
+            val code = codeInput.text.toString().trim()
+            if (!code.matches(Regex("\\d{5}"))) { codeInput.error = "Kode harus 5 angka"; return@smallButton }
+            roomMessage = "Menghubungkan..."; invalidate(); dialog.dismiss()
+            firebase.joinRoom(code, name) { result ->
+                if (result.isSuccess) enterRoom(result.getOrThrow())
+                else { roomMessage = result.exceptionOrNull()?.message ?: "Gagal join room."; invalidate() }
+            }
+        }
+        row.addView(cancel, LinearLayout.LayoutParams(0, d(44f).toInt(), 1f))
+        row.addView(join, LinearLayout.LayoutParams(0, d(44f).toInt(), 1.5f).apply { marginStart = d(8f).toInt() })
+        val lp = LinearLayout.LayoutParams(-1, d(44f).toInt()); lp.topMargin = d(16f).toInt()
+        root.addView(row, lp)
+        dialog.show()
+        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        dialog.window?.setLayout((w * .92f).toInt().coerceAtLeast(d(280f).toInt()), -2)
     }
 
     private fun enterRoom(code: String) {
@@ -878,25 +973,24 @@ class GameView(ctx: Context) : View(ctx) {
         val contentW = w - 2 * m
 
         // Header bergaya meja kartu: hierarki kode room lebih kuat dan punya affordance salin.
-        txt(c, "♠   KARTU 13  ·  MULTIPLAYER   ♥", cx, t + d(25f), d(10f), MUTE, Paint.Align.CENTER, true)
-        txt(c, "Ruang tunggu", cx, t + d(57f), d(27f), GOLD, Paint.Align.CENTER, true)
-        txt(c, "Bermain bersama teman dalam satu meja", cx, t + d(76f), d(11f), MUTE, Paint.Align.CENTER)
-        val codeTop = t + d(91f)
+        txt(c, "♠  MEJA MULTIPLAYER  ♥", cx, t + d(27f), d(11f), MUTE, Paint.Align.CENTER, true)
+        txt(c, "Ruang tunggu", cx, t + d(58f), d(25f), GOLD, Paint.Align.CENTER, true)
+        val codeTop = t + d(78f)
         val codeRect = RectF(l + m, codeTop, l + w - m, codeTop + d(94f))
         box(c, codeRect, Color.argb(190, 3, 35, 25), Color.argb(150, 224, 180, 76), d(1.4f), d(16f))
-        txt(c, "KODE ROOM  ·  UNDANG TEMANMU", cx, codeRect.top + d(24f), d(10f), MUTE, Paint.Align.CENTER, true)
-        txt(c, state.code, cx, codeRect.top + d(69f), d(39f), INK, Paint.Align.CENTER, true)
+        txt(c, "KODE ROOM · BAGIKAN KE TEMAN", cx, codeRect.top + d(24f), d(10f), MUTE, Paint.Align.CENTER, true)
+        txt(c, state.code, cx, codeRect.top + d(68f), d(37f), INK, Paint.Align.CENTER, true)
 
         val top = codeRect.bottom + d(14f)
         val bottom = b - d(if (state.host == firebase.playerId) 184f else 144f)
         val boxR = RectF(l + m, top, l + w - m, max(top + d(100f), bottom))
         box(c, boxR, Color.argb(165, 4, 25, 20), Color.argb(100, 224, 180, 76), d(1f), d(15f))
-        txt(c, "DAFTAR PEMAIN", boxR.left + d(14f), boxR.top + d(25f), d(11f), GOLD, Paint.Align.LEFT, true)
-        txt(c, "${state.players.size} DARI 4", boxR.right - d(14f), boxR.top + d(25f), d(10f), MUTE, Paint.Align.RIGHT, true)
+        txt(c, "PEMAIN", boxR.left + d(14f), boxR.top + d(24f), d(11f), GOLD, Paint.Align.LEFT, true)
+        txt(c, "${state.players.size}/4", boxR.right - d(14f), boxR.top + d(24f), d(11f), MUTE, Paint.Align.RIGHT, true)
         var yy = boxR.top + d(48f)
         state.players.forEachIndexed { index, p ->
             val row = RectF(boxR.left + d(9f), yy - d(17f), boxR.right - d(9f), yy + d(15f))
-            box(c, row, Color.argb(if (index % 2 == 0) 34 else 22, 255, 255, 255), Color.argb(22, 255, 255, 255), d(.6f), d(9f))
+            if (index % 2 == 0) box(c, row, Color.argb(45, 255, 255, 255), 0, 0f, d(8f))
             val isHost = p.id == state.host
             val isMe = p.id == firebase.playerId
             val label = p.name + (if (isMe) "  · KAMU" else "")
