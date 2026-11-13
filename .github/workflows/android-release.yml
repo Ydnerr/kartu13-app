@@ -1,0 +1,82 @@
+name: Build & Release APK
+
+on:
+  push:
+    tags: ['v*']          # contoh: git tag v1.0.0 && git push origin v1.0.0
+  workflow_dispatch:      # atau jalankan manual dari tab Actions (hasilnya jadi artifact, bukan Release)
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Versi dari tag
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            V="${GITHUB_REF_NAME#v}"
+          else
+            V="0.0.${GITHUB_RUN_NUMBER}-dev"
+          fi
+          echo "VERSION_NAME=$V" >> "$GITHUB_ENV"
+          echo "VERSION_CODE=${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+
+      - name: Siapkan keystore (tanda tangan APK)
+        env:
+          KS_B64: ${{ secrets.KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KS_KEYPASS: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          KS="$RUNNER_TEMP/release.jks"
+          if [ -n "$KS_B64" ]; then
+            echo "$KS_B64" | base64 -d > "$KS"
+            {
+              echo "KEYSTORE_PASSWORD=$KS_PASS"
+              echo "KEY_ALIAS=$KS_ALIAS"
+              echo "KEY_PASSWORD=$KS_KEYPASS"
+            } >> "$GITHUB_ENV"
+          else
+            keytool -genkeypair -keystore "$KS" -storepass kartu13build -keypass kartu13build \
+              -alias kartu13 -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Kartu 13, O=Kartu13, C=ID"
+            {
+              echo "KEYSTORE_PASSWORD=kartu13build"
+              echo "KEY_ALIAS=kartu13"
+              echo "KEY_PASSWORD=kartu13build"
+            } >> "$GITHUB_ENV"
+            echo "::warning::Secret keystore belum diset. APK ditandatangani kunci sementara, jadi update antar-rilis nggak bisa menimpa versi lama. Lihat README bagian 'Tanda tangan'."
+          fi
+          echo "KEYSTORE_FILE=$KS" >> "$GITHUB_ENV"
+
+      - name: Build APK release
+        run: gradle assembleRelease --no-daemon --stacktrace
+
+      - name: Ganti nama APK
+        run: |
+          cp app/build/outputs/apk/release/app-release.apk "Kartu13-${VERSION_NAME}.apk"
+          ls -la Kartu13-*.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Kartu13-apk
+          path: Kartu13-*.apk
+
+      - name: Upload ke GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Kartu13-*.apk
+          generate_release_notes: true

@@ -1,0 +1,3 @@
+Gambar kartu: Vecteezy.com (Set of poker cards, resource 53654344), https://www.vecteezy.com
+Lisensi: Vecteezy Free License, wajib atribusi "Vecteezy.com" (lihat Vecteezy-License-Information.pdf).
+File ini dikonversi dari EPS ke SVG per kartu: 0.svg..51.svg (id = angka*4 + logo, angka 3..K,A,2, logo ♠ ♣ ♦ ♥) dan back.svg.
