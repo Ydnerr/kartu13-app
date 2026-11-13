@@ -23,6 +23,7 @@ class VoiceChatManager(context: Context, private val db: DatabaseReference, priv
     private var audioSource: AudioSource? = null
     private var micTrack: org.webrtc.AudioTrack? = null
     private var muted = false
+    private var ptt = app.getSharedPreferences("k13", Context.MODE_PRIVATE).getBoolean("ptt", false) // sama dengan web: localStorage k13ptt
     private var joined = false
     private var voiceListener: ValueEventListener? = null
     private var signalListener: ChildEventListener? = null
@@ -56,6 +57,34 @@ class VoiceChatManager(context: Context, private val db: DatabaseReference, priv
 
     fun isJoined() = joined
     fun isMuted() = muted
+    fun isPtt() = ptt
+
+    /** Mode tahan-ngomong. Sama dengan web: PTT mulai dalam keadaan mute, open mic langsung nyala. */
+    fun setPtt(on: Boolean) {
+        ptt = on
+        app.getSharedPreferences("k13", Context.MODE_PRIVATE).edit().putBoolean("ptt", on).apply()
+        setMuted(on)
+    }
+
+    /** Set mute eksplisit (dipakai tombol tahan-ngomong: tekan = false, lepas = true). */
+    fun setMuted(m: Boolean) {
+        muted = m
+        micTrack?.setEnabled(!m)
+        if (joined) onStatus(statusText())
+    }
+
+    /** Status sambungan voice ke pemain [id]: 0 = tidak di voice, 1 = menyambung, 2 = tersambung, 3 = gagal. */
+    fun peerState(id: String): Int {
+        if (!joined || id == playerId || !members.containsKey(id)) return 0
+        val pc = peers[id]?.pc ?: return 1
+        return try {
+            when (pc.iceConnectionState()) {
+                PeerConnection.IceConnectionState.CONNECTED, PeerConnection.IceConnectionState.COMPLETED -> 2
+                PeerConnection.IceConnectionState.FAILED, PeerConnection.IceConnectionState.DISCONNECTED, PeerConnection.IceConnectionState.CLOSED -> 3
+                else -> 1
+            }
+        } catch (_: Throwable) { 1 }
+    }
 
     fun join(roomCode: String) {
         if (joined) return
@@ -78,8 +107,8 @@ class VoiceChatManager(context: Context, private val db: DatabaseReference, priv
                 mandatory.add(MediaConstraints.KeyValuePair("googNoiseSuppression", "true"))
                 mandatory.add(MediaConstraints.KeyValuePair("googAutoGainControl", "true"))
             })
-            micTrack = factory!!.createAudioTrack("k13-mic", audioSource!!).apply { setEnabled(true) }
-            muted = false
+            muted = ptt // PTT: mulai mute; open mic: langsung nyala
+            micTrack = factory!!.createAudioTrack("k13-mic", audioSource!!).apply { setEnabled(!muted) }
             joined = true
             val base = db.child("rooms").child(roomCode)
             val voiceRef = base.child("voice")
@@ -120,7 +149,7 @@ class VoiceChatManager(context: Context, private val db: DatabaseReference, priv
     }
 
     fun toggleMute() {
-        muted = !muted; micTrack?.setEnabled(!muted)
+        setMuted(!muted)
         onStatus(if (muted) "Mikrofon dimatikan" else "Mikrofon aktif")
     }
 
