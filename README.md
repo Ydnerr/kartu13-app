@@ -3,7 +3,7 @@
 Port native Kotlin dari game web "Kartu 13 / Poker 13". Tanpa WebView, tanpa library pihak ketiga.
 
 ## Status
-Tahap 1 dan 2 selesai. Sisanya di roadmap di bawah. Acuan fitur: web `index.html` + `game.js` v44.11 (tanda ✅ = sudah ada di app Android, ⬜ = belum).
+Tahap 1, 2, dan 2.5 selesai. Sisanya di roadmap di bawah. Acuan fitur: web `index.html` + `game.js` v44.11 (tanda ✅ = sudah ada di app Android, ⬜ = belum).
 
 Prinsip: tanpa WebView, dan sebisa mungkin tanpa library pihak ketiga. Setiap tahap harus bisa di-build dan dimainkan sendiri sebelum lanjut ke tahap berikutnya.
 
@@ -20,15 +20,16 @@ Prinsip: tanpa WebView, dan sebisa mungkin tanpa library pihak ketiga. Setiap ta
 - ✅ Musik ambient abad pertengahan (sintesis, tanpa file audio)
 - ✅ Tombol Musik / Suara (menu dan layar main), pilihan tersimpan
 
-### ⬜ Tahap 2.5: animasi dan kenyamanan main (offline, lawan bot)
-Dikerjakan sebelum multiplayer supaya gampang dites tanpa urusan sinkronisasi.
-- ⬜ Kartu meluncur dari pemain ke meja sebagai punggung kartu, lalu dibalik (`flyIn`, `fly`)
-- ⬜ Kartu naik-turun halus saat dipilih, efek bom, kartu dibagi di awal game
-- ⬜ Atur kartu manual: tahan lalu seret kartu ke posisi baru (`onHandDown`, `dragStart`, `dragFrame`, `endDrag`)
-- ⬜ Tombol **Kelompokkan** (`groupHand`: tunggal, pasangan, 3 kembar, seri, 4 kembar) dan urutan tangan tersimpan
-- ⬜ Notif melayang "Rapikan kartu dulu" 30 detik di awal game (`arnShow`)
-- ⬜ Getar tipis saat giliran kamu (`turnBuzz`, butuh izin `VIBRATE`)
-- ⬜ Opsi "Kartu: besar / normal" (`tb`)
+### ✅ Tahap 2.5: animasi dan kenyamanan main (offline, lawan bot)
+- ✅ Kartu meluncur dari pemain ke meja sebagai punggung kartu, lalu dibalik satu-satu (`flyIn`)
+- ✅ Kartu naik-turun halus saat dipilih, kartu dibagi dari tengah meja di awal game
+- ✅ Efek bom: layar goyang, kilat, dan gelombang cincin
+- ✅ Atur kartu manual: tahan sebentar lalu seret kartu ke posisi baru (hasil port `onHandDown` / `dragFrame`)
+- ✅ Kartu tidak lagi diurutkan otomatis: dibagi acak seperti dealer, sama seperti web
+- ✅ Tombol **Kelompokkan** (`groupHand`) dan **Batal pilih**
+- ✅ Notif "Rapikan kartu dulu" 30 detik di awal game (`arnShow`)
+- ✅ Getar tipis saat giliran kamu (`turnBuzz`, izin `VIBRATE`)
+- ✅ Opsi "Kartu: besar / normal" di menu depan (`tb`)
 
 ### ⬜ Tahap 2.6: tutorial
 - ⬜ Tutorial geser dengan contoh kartu asli (`TUT`)

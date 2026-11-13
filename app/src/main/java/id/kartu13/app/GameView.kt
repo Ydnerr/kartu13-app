@@ -10,8 +10,12 @@ import android.graphics.RadialGradient
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
+import android.os.VibrationEffect
+import android.os.Vibrator
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
@@ -20,6 +24,7 @@ import android.view.View
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.sin
 import kotlin.random.Random
 
 private val GOLD = Color.parseColor("#e0b44c")
@@ -75,6 +80,42 @@ class GameView(ctx: Context) : View(ctx) {
     private var lastY = 0f
     private var moved = false
 
+    // ---- tahap 2.5: animasi, atur kartu manual, getar, kartu besar
+    private class Fly(val p: Int, val t0: Long, val n: Int) {
+        val total = 340L + 240L + 50L * (n - 1) + 40L
+    }
+
+    private var now = 0L
+    private var lastT = 0L
+    private var frameDt = 16L
+    private var anim = false
+    private var slow = false
+    private var fly: Fly? = null
+    private var dealT0 = 0L
+    private var boomT0 = 0L
+    private var arnT0 = 0L
+    private var arnDone = false
+    private var buzzKey = ""
+    private var order = ArrayList<Int>()
+    private val selFrac = HashMap<Int, Float>()
+    private val cardRects = HashMap<Int, RectF>()
+    private val seatR = arrayOfNulls<RectF>(4)
+    private var handX0 = 0f
+    private var handStep = 0f
+    private var handTopY = 0f
+    private var handBottomY = 0f
+    private var tblCx = 0f
+    private var tblCy = 0f
+    private var big = prefs.getBoolean("big", false)
+    private var dragging = false
+    private var dragId = -1
+    private var dragX = 0f
+    private var dragY = 0f
+    private var dragDX = 0f
+    private var dragDY = 0f
+    private var downCard: Hit? = null
+    private val lpTask = Runnable { startDrag() }
+
     init {
         fitsSystemWindows = true
     }
@@ -86,6 +127,15 @@ class GameView(ctx: Context) : View(ctx) {
         handler.removeCallbacks(botTask)
         game = deal(listOf(0, 1, 2, 3), lead)
         lastLog = game?.log?.size ?: 0
+        order = ArrayList()
+        selFrac.clear()
+        fly = null
+        boomT0 = 0L
+        endDragState()
+        dealT0 = tnow()
+        arnT0 = 0L
+        arnDone = false
+        buzzKey = ""
         sel.clear()
         msg = ""
         screen = Screen.GAME
@@ -101,6 +151,7 @@ class GameView(ctx: Context) : View(ctx) {
         val g = game
         if (g != null) {
             playSfx(g)
+            turnBuzz(g)
             sel.retainAll(g.hands[0].toSet())
             if (g.first && !g.over && g.dec.isEmpty() && g.order[g.turn] == 0 && !g.fin.contains(0)) {
                 sel.clear()
@@ -162,7 +213,9 @@ class GameView(ctx: Context) : View(ctx) {
         afterMove()
     }
 
-    // efek suara buat kartu yang baru keluar (log bisa nambah >1 entri, mis. mainkan + "juara")
+    private fun tnow(): Long = SystemClock.uptimeMillis()
+
+    // efek suara + animasi buat kartu yang baru keluar (log bisa nambah >1 entri, mis. mainkan + "juara")
     private fun playSfx(g: Game) {
         val ln = g.log.size
         if (ln > lastLog) {
@@ -171,13 +224,79 @@ class GameView(ctx: Context) : View(ctx) {
                 val x = g.log[i]
                 if (x.c != null || x.x) e = x
             }
-            if ((g.bomb || g.self2 != null) && g.over) snd.boom()
-            else if (e != null) {
+            if ((g.bomb || g.self2 != null) && g.over) {
+                snd.boom()
+                boomT0 = tnow()
+            } else if (e != null) {
                 val cs = e.c
                 if (cs != null) snd.play(cs.size) else snd.pass()
             }
+            if (e != null) {
+                val ec = e.c
+                if (ec != null) fly = Fly(e.p, tnow(), ec.size)
+            }
         }
         lastLog = ln
+    }
+
+    // getar tipis sekali tiap giliran kamu (nggak ada timer, nggak jalan otomatis)
+    private fun turnBuzz(g: Game) {
+        if (g.over || g.dec.isNotEmpty() || g.order[g.turn] != 0 || g.fin.contains(0)) { buzzKey = ""; return }
+        val key = g.log.size.toString() + ":" + g.turn
+        if (key == buzzKey) return
+        buzzKey = key
+        buzz(25L)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun buzz(ms: Long) {
+        try {
+            val v = context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator ?: return
+            if (Build.VERSION.SDK_INT >= 26) v.vibrate(VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE))
+            else v.vibrate(ms)
+        } catch (_: Throwable) {
+        }
+    }
+
+    // urutan tangan: dipertahankan; kartu baru dibagi = diacak seperti dibagiin dealer
+    private fun syncOrder(hs: List<Int>): List<Int> {
+        val set = hs.toSet()
+        val k = ArrayList<Int>()
+        for (id in order) if (set.contains(id) && !k.contains(id)) k.add(id)
+        order = if (k.size < hs.size) ArrayList(hs.shuffled()) else k
+        return order
+    }
+
+    private fun startDrag() {
+        val h = downCard ?: return
+        val r = cardRects[h.idx] ?: return
+        dragging = true
+        dragId = h.idx
+        dragX = downX
+        dragY = downY
+        dragDX = downX - r.left
+        dragDY = downY - r.top
+        buzz(12L)
+        invalidate()
+    }
+
+    private fun endDragState() {
+        dragging = false
+        dragId = -1
+        downCard = null
+        handler.removeCallbacks(lpTask)
+    }
+
+    private fun dragReorder() {
+        val n = order.size
+        val from = order.indexOf(dragId)
+        if (from < 0 || n < 2 || handStep <= 0f) return
+        if (dragY < handTopY - d(110f) || dragY > handBottomY + d(60f)) return
+        val to = ((dragX - handX0) / handStep).toInt().coerceIn(0, n - 1)
+        if (to != from) {
+            order.removeAt(from)
+            order.add(to, dragId)
+        }
     }
 
     fun onResume() { snd.resume() }
@@ -211,6 +330,11 @@ class GameView(ctx: Context) : View(ctx) {
                 snd.tick(up)
                 if (up) sel.add(h.idx) else sel.remove(h.idx)
             }
+            "group" -> { order = ArrayList(groupHand(order)); arnDone = true }
+            "unsel" -> { sel.clear(); msg = "" }
+            "arnx" -> arnDone = true
+            "arnbox" -> { }
+            "big" -> { big = !big; prefs.edit().putBoolean("big", big).apply() }
             "music" -> snd.setMusic(!snd.musicOn)
             "sfx" -> snd.setSfx(!snd.sfxOn)
             "play" -> humanPlay(false)
@@ -225,20 +349,50 @@ class GameView(ctx: Context) : View(ctx) {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 downX = e.x; downY = e.y; lastY = e.y; moved = false
+                handler.removeCallbacks(lpTask)
+                downCard = null
+                if (screen == Screen.GAME && order.size > 1 && !dragging) {
+                    downCard = hits.lastOrNull { it.id == "card" && it.r.contains(e.x, e.y) }
+                    if (downCard != null) handler.postDelayed(lpTask, 260L) // tahan sebentar = mulai nyeret kartu
+                }
             }
             MotionEvent.ACTION_MOVE -> {
+                if (dragging) {
+                    dragX = e.x
+                    dragY = e.y
+                    dragReorder()
+                    invalidate()
+                    return true
+                }
                 if (screen == Screen.RULES) {
                     rulesScroll = (rulesScroll - (e.y - lastY)).coerceIn(0f, max(0f, rulesMax))
                     lastY = e.y
                     invalidate()
                 }
-                if (abs(e.x - downX) > d(12f) || abs(e.y - downY) > d(12f)) moved = true
+                if (abs(e.x - downX) > d(12f) || abs(e.y - downY) > d(12f)) {
+                    moved = true
+                    handler.removeCallbacks(lpTask)
+                }
             }
             MotionEvent.ACTION_UP -> {
+                handler.removeCallbacks(lpTask)
+                if (dragging) {
+                    endDragState()
+                    arnDone = true
+                    invalidate()
+                    return true
+                }
                 if (!moved) {
                     for (h in hits.reversed()) {
                         if (h.r.contains(e.x, e.y)) { handleHit(h); break }
                     }
+                }
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                handler.removeCallbacks(lpTask)
+                if (dragging) {
+                    endDragState()
+                    invalidate()
                 }
             }
         }
@@ -310,14 +464,14 @@ class GameView(ctx: Context) : View(ctx) {
         paint.style = Paint.Style.FILL
     }
 
-    private fun button(c: Canvas, r: RectF, label: String, id: String, enabled: Boolean, ghost: Boolean, idx: Int = -1) {
+    private fun button(c: Canvas, r: RectF, label: String, id: String, enabled: Boolean, ghost: Boolean, idx: Int = -1, fs: Float = 15f) {
         val a = if (enabled) 255 else 90
         if (ghost) {
             box(c, r, 0, fade(GOLD, a), d(1.5f), d(10f))
-            txt(c, label, r.centerX(), r.centerY() + d(5.5f), d(15f), fade(GOLD, a), Paint.Align.CENTER, true)
+            txt(c, label, r.centerX(), r.centerY() + d(fs * 0.37f), d(fs), fade(GOLD, a), Paint.Align.CENTER, true)
         } else {
             box(c, r, fade(GOLD, a), 0, 0f, d(10f))
-            txt(c, label, r.centerX(), r.centerY() + d(5.5f), d(15f), fade(DARK, a), Paint.Align.CENTER, true)
+            txt(c, label, r.centerX(), r.centerY() + d(fs * 0.37f), d(fs), fade(DARK, a), Paint.Align.CENTER, true)
         }
         if (enabled) hits.add(Hit(r, id, idx))
     }
@@ -338,6 +492,11 @@ class GameView(ctx: Context) : View(ctx) {
     // ---------------------------------------------------------------- layar
     override fun onDraw(c: Canvas) {
         hits.clear()
+        now = SystemClock.uptimeMillis()
+        frameDt = min(50L, max(1L, now - lastT))
+        lastT = now
+        anim = false
+        slow = false
         bg?.let { c.drawRect(0f, 0f, width.toFloat(), height.toFloat(), it) }
         val l = paddingLeft.toFloat()
         val t = paddingTop.toFloat()
@@ -345,8 +504,42 @@ class GameView(ctx: Context) : View(ctx) {
         val b = (height - paddingBottom).toFloat()
         when (screen) {
             Screen.HOME -> drawHome(c, l, t, w, b)
-            Screen.GAME -> drawGame(c, l, t, w, b)
+            Screen.GAME -> {
+                val bt = now - boomT0
+                if (boomT0 > 0L && bt < 420L) { // layar goyang sebentar pas bom
+                    val k = 1f - bt / 420f
+                    c.save()
+                    c.translate(sin(bt / 22.0).toFloat() * d(6f) * k, sin(bt / 31.0).toFloat() * d(3f) * k)
+                    drawGame(c, l, t, w, b)
+                    c.restore()
+                } else {
+                    drawGame(c, l, t, w, b)
+                }
+                drawBoomFx(c, w, b)
+            }
             Screen.RULES -> drawRules(c, l, t, w, b)
+        }
+        if (anim) postInvalidateOnAnimation() else if (slow) postInvalidateDelayed(250L)
+    }
+
+    private fun drawBoomFx(c: Canvas, w: Float, b: Float) {
+        if (boomT0 <= 0L) return
+        val el = now - boomT0
+        if (el > 900L) return
+        anim = true
+        if (el < 350L) {
+            val a = ((1f - el / 350f) * 90f).toInt().coerceIn(0, 255)
+            paint.style = Paint.Style.FILL
+            paint.color = Color.argb(a, 255, 240, 200)
+            c.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
+        }
+        if (el < 700L) {
+            val k = el / 700f
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = d(7f) * (1f - k) + d(1f)
+            paint.color = fade(GOLD, ((1f - k) * 255f).toInt().coerceIn(0, 255))
+            c.drawCircle(tblCx, tblCy, k * max(w, b) * 0.55f, paint)
+            paint.style = Paint.Style.FILL
         }
     }
 
@@ -393,10 +586,12 @@ class GameView(ctx: Context) : View(ctx) {
         y += d(56f) + d(12f)
         button(c, RectF(cx - ww / 2, y, cx + ww / 2, y + d(48f)), "Aturan main", "rules", true, true)
         y += d(48f) + d(12f)
-        val tg = d(8f)
-        val tw = (ww - tg) / 2
-        button(c, RectF(cx - ww / 2, y, cx - ww / 2 + tw, y + d(40f)), "Musik: " + (if (snd.musicOn) "nyala" else "mati"), "music", true, !snd.musicOn)
-        button(c, RectF(cx + ww / 2 - tw, y, cx + ww / 2, y + d(40f)), "Suara: " + (if (snd.sfxOn) "nyala" else "mati"), "sfx", true, !snd.sfxOn)
+        val tg = d(6f)
+        val tw = (ww - 2 * tg) / 3
+        val x0 = cx - ww / 2
+        button(c, RectF(x0, y, x0 + tw, y + d(40f)), "Musik: " + (if (snd.musicOn) "nyala" else "mati"), "music", true, !snd.musicOn, -1, 12f)
+        button(c, RectF(x0 + tw + tg, y, x0 + 2 * tw + tg, y + d(40f)), "Suara: " + (if (snd.sfxOn) "nyala" else "mati"), "sfx", true, !snd.sfxOn, -1, 12f)
+        button(c, RectF(x0 + 2 * (tw + tg), y, x0 + ww, y + d(40f)), "Kartu: " + (if (big) "besar" else "normal"), "big", true, !big, -1, 12f)
         val v = versionName()
         txt(c, "© 2026 Poker 13" + (if (v.isNotEmpty()) " · v$v" else ""), cx, b - d(40f), d(11f), MUTE)
         txt(c, "AI-assisted by Claude · Card art: Vecteezy.com", cx, b - d(24f), d(11f), MUTE)
@@ -445,6 +640,7 @@ class GameView(ctx: Context) : View(ctx) {
             val p = seats[k]
             val x0 = l + m + k * (ow + gap)
             val r = RectF(x0, y, x0 + ow, y + oh)
+            seatR[p] = r
             val turn = cur == p && !g.over && !pend
             val rank = g.fin.indexOf(p) + 1
             val dim = g.passed.contains(p) || rank > 0
@@ -463,18 +659,23 @@ class GameView(ctx: Context) : View(ctx) {
         }
 
         // ukuran tangan & posisi tombol
-        val cw = min(w * 0.2f, (b - t) * 0.1f)
+        val cwBase = min(w * 0.2f, (b - t) * 0.1f)
+        val cw = if (big) min(cwBase * 1.25f, min(w * 0.26f, (b - t) * 0.125f)) else cwBase
         val ch = cw / CARD_RATIO
         val raise = ch * 0.22f
         val handBottom = b - d(8f)
         val handTop = handBottom - ch
         val btnH = d(48f)
         val btnTop = handTop - raise - d(6f) - btnH
-        val msgH = d(52f)
+        val chipH = d(32f)
+        val chipTop = btnTop - d(6f) - chipH
+        val msgH = d(38f)
         val tableTop = y + oh + d(8f)
-        val tableBottom = btnTop - msgH - d(4f)
+        val tableBottom = max(tableTop + d(120f), chipTop - msgH - d(4f))
         val tr = RectF(l + m, tableTop, l + w - m, tableBottom)
         box(c, tr, TABLE, EDGE, d(1f), d(18f))
+        tblCx = tr.centerX()
+        tblCy = tr.centerY()
 
         if (g.over) {
             drawResult(c, g, tr)
@@ -504,9 +705,47 @@ class GameView(ctx: Context) : View(ctx) {
                 val totalW = tcw + step * (n - 1)
                 var x = tr.centerX() - totalW / 2
                 val top = tr.centerY() - tch / 2 + d(4f)
-                for (id in last.c) {
-                    drawCard(c, id, RectF(x, top, x + tcw, top + tch))
-                    x += step
+                val fa = fly
+                val el = if (fa != null && fa.p == last.p) now - fa.t0 else Long.MAX_VALUE
+                if (fa != null && el < fa.total) {
+                    anim = true
+                    val dx0 = tr.centerX()
+                    val dy0 = top + tch / 2
+                    val sr = seatR[fa.p]
+                    val sx = if (fa.p == 0 || sr == null) cx else sr.centerX()
+                    val sy = if (fa.p == 0 || sr == null) handTop + ch / 2 else sr.centerY()
+                    if (el < 340L) { // meluncur dari pemain ke meja sebagai punggung kartu
+                        val tt = el / 340f
+                        val e1 = 1f - (1f - tt) * (1f - tt) * (1f - tt)
+                        val sc = 0.55f + 0.45f * e1
+                        c.save()
+                        c.translate((sx - dx0) * (1f - e1), (sy - dy0) * (1f - e1))
+                        c.scale(sc, sc, dx0, dy0)
+                        c.saveLayerAlpha(RectF(x - d(4f), top - d(4f), x + totalW + d(4f), top + tch + d(4f)), ((0.2f + 0.8f * e1) * 255f).toInt().coerceIn(0, 255))
+                        for (id in last.c) {
+                            drawCard(c, -1, RectF(x, top, x + tcw, top + tch))
+                            x += step
+                        }
+                        c.restore()
+                        c.restore()
+                    } else { // dibalik satu-satu
+                        for (i in last.c.indices) {
+                            val u = el - 340L - 50L * i
+                            val rr = RectF(x, top, x + tcw, top + tch)
+                            val back = u < 120L
+                            val sxs = if (u < 0L) 1f else if (u < 120L) 1f - u / 120f else if (u < 240L) (u - 120L) / 120f else 1f
+                            c.save()
+                            c.scale(max(0.03f, sxs), 1f, rr.centerX(), rr.centerY())
+                            drawCard(c, if (back) -1 else last.c[i], rr)
+                            c.restore()
+                            x += step
+                        }
+                    }
+                } else {
+                    for (id in last.c) {
+                        drawCard(c, id, RectF(x, top, x + tcw, top + tch))
+                        x += step
+                    }
                 }
             }
             val who = if (myTurn) "Giliran lo!" else if (pend) "Nunggu pilihan kartu murni" else "Giliran " + NAMES[cur]
@@ -521,13 +760,39 @@ class GameView(ctx: Context) : View(ctx) {
             para(c, note, l + m, tableBottom + d(6f), (w - 2 * m).toInt(), d(13f), if (msg.isNotEmpty()) WARN else MUTE, Layout.Alignment.ALIGN_CENTER)
         }
 
+        // notif "Rapikan kartu dulu" (30 detik, sekali tiap game baru)
+        if (!arnDone && !g.over) {
+            if (arnT0 == 0L && g.log.isEmpty() && g.hands[0].size > 1 && !g.dec.contains(0)) arnT0 = now
+            if (arnT0 > 0L) {
+                val ael = now - arnT0
+                if (ael >= 30000L) {
+                    arnDone = true
+                } else {
+                    slow = true
+                    val ar = RectF(tr.left + d(8f), tr.top + d(8f), tr.right - d(8f), tr.top + d(84f))
+                    box(c, ar, Color.argb(235, 16, 42, 34), GOLD, d(1.5f), d(12f))
+                    hits.add(Hit(ar, "arnbox", -1))
+                    txt(c, "Rapikan kartu dulu (" + ((30000L - ael) / 1000L + 1L) + " dtk)", ar.left + d(12f), ar.top + d(24f), d(14f), GOLD, Paint.Align.LEFT, true)
+                    para(c, "Tahan kartu lalu geser buat atur manual, atau tap Kelompokkan.", ar.left + d(12f), ar.top + d(32f), (ar.width() - d(56f)).toInt(), d(12f), INK, Layout.Alignment.ALIGN_NORMAL)
+                    val xr = RectF(ar.right - d(40f), ar.top + d(4f), ar.right - d(4f), ar.top + d(40f))
+                    txt(c, "✕", xr.centerX(), xr.centerY() + d(6f), d(18f), MUTE)
+                    hits.add(Hit(xr, "arnx", -1))
+                    val frac = 1f - ael / 30000f
+                    box(c, RectF(ar.left + d(12f), ar.bottom - d(10f), ar.left + d(12f) + (ar.width() - d(24f)) * frac, ar.bottom - d(6f)), GOLD, 0, 0f, d(2f))
+                }
+            }
+        }
+
         // tombol
         val bwid = (w - 2 * m - gap) / 2
         button(c, RectF(l + m, btnTop, l + m + bwid, btnTop + btnH), "Lewat", "pass", myTurn && g.last != null && !g.first, true)
         button(c, RectF(l + m + bwid + gap, btnTop, l + w - m, btnTop + btnH), "Mainkan", "play", myTurn && sel.isNotEmpty(), false)
+        button(c, RectF(l + m, chipTop, l + m + bwid, chipTop + chipH), "Kelompokkan", "group", g.hands[0].size > 1, true, -1, 13f)
+        button(c, RectF(l + m + bwid + gap, chipTop, l + w - m, chipTop + chipH), "Batal pilih", "unsel", sel.isNotEmpty(), true, -1, 13f)
 
-        // tangan
-        val hand = groupHand(g.hands[0])
+        // tangan: urutan manual (tahan lalu geser), Kelompokkan buat merapikan
+        val hand = syncOrder(g.hands[0])
+        cardRects.clear()
         if (hand.isEmpty()) {
             txt(c, if (g.over) "" else "Kamu sudah selesai. Tinggal nonton!", cx, handTop + ch / 2, d(15f), MUTE)
         } else {
@@ -536,22 +801,70 @@ class GameView(ctx: Context) : View(ctx) {
             val step = if (n > 1) min(cw * 0.9f, (availW - cw) / (n - 1)) else 0f
             val totalW = cw + step * (n - 1)
             var x = cx - totalW / 2
+            handX0 = x
+            handStep = step
+            handTopY = handTop
+            handBottomY = handTop + ch
+            val dealing = dealT0 > 0L && !g.over && now - dealT0 < 820L
+            if (dealing) anim = true
             for (i in hand.indices) {
                 val id = hand[i]
                 val selected = sel.contains(id)
-                val top = handTop - (if (selected) raise else 0f)
+                val target = if (selected) 1f else 0f
+                var f = selFrac[id] ?: target
+                if (f != target) {
+                    val dv = frameDt / 110f
+                    f = if (f < target) min(target, f + dv) else max(target, f - dv)
+                    if (f != target) anim = true
+                }
+                selFrac[id] = f
+                val top = handTop - raise * f
                 val r = RectF(x, top, x + cw, top + ch)
-                drawCard(c, id, r)
-                if (selected) {
-                    paint.style = Paint.Style.STROKE
-                    paint.strokeWidth = d(2.5f)
-                    paint.color = GOLD
-                    c.drawRoundRect(r, cw * 0.055f, cw * 0.055f, paint)
-                    paint.style = Paint.Style.FILL
+                cardRects[id] = r
+                val ghostSlot = dragging && id == dragId
+                val dl = if (dealing) now - dealT0 - 40L * i else 1000L
+                if (dl > 0L) {
+                    c.save()
+                    if (dl < 300L) { // dibagi dari tengah meja
+                        val tt = dl / 300f
+                        val e1 = 1f - (1f - tt) * (1f - tt) * (1f - tt)
+                        val sc = 0.6f + 0.4f * e1
+                        c.translate((tblCx - r.centerX()) * (1f - e1), (tblCy - r.centerY()) * (1f - e1))
+                        c.scale(sc, sc, r.centerX(), r.centerY())
+                    }
+                    if (ghostSlot) c.saveLayerAlpha(RectF(r.left - 4f, r.top - 4f, r.right + 4f, r.bottom + 4f), 70)
+                    drawCard(c, id, r)
+                    if (selected) {
+                        paint.style = Paint.Style.STROKE
+                        paint.strokeWidth = d(2.5f)
+                        paint.color = GOLD
+                        c.drawRoundRect(r, cw * 0.055f, cw * 0.055f, paint)
+                        paint.style = Paint.Style.FILL
+                    }
+                    if (ghostSlot) c.restore()
+                    c.restore()
                 }
                 val hr = RectF(x, top, x + (if (i == n - 1) cw else step), top + ch)
                 hits.add(Hit(hr, "card", id))
                 x += step
+            }
+        }
+
+        // kartu yang lagi diseret: ikut jari, agak membesar dan miring
+        if (dragging) {
+            val r0 = cardRects[dragId]
+            if (r0 != null) {
+                val rw = r0.width()
+                val rh = r0.height()
+                val left = dragX - dragDX
+                val topd = dragY - dragDY
+                val rr = RectF(left, topd, left + rw, topd + rh)
+                c.save()
+                c.rotate(-4f, rr.centerX(), rr.centerY())
+                c.scale(1.12f, 1.12f, rr.centerX(), rr.centerY())
+                box(c, RectF(rr.left + d(2f), rr.top + d(5f), rr.right + d(2f), rr.bottom + d(5f)), Color.argb(110, 0, 0, 0), 0, 0f, rw * 0.06f)
+                drawCard(c, dragId, rr)
+                c.restore()
             }
         }
     }

@@ -29,8 +29,8 @@ import kotlin.random.Random
 
 private const val SR = 22050
 
-// Balans volume musik (web: .55). Naikkan/turunkan kalau terlalu keras / pelan.
-private const val MUSIC_GAIN = 0.55
+// Balans volume musik. Diukur lewat simulasi: 1.5 = sekitar -14 dBFS RMS (puncak -3.6 dBFS). Naikkan kalau masih pelan.
+private const val MUSIC_GAIN = 1.5
 private const val REVERB_WET = 0.5
 
 // ---------------------------------------------------------------- filter biquad (RBJ cookbook)
