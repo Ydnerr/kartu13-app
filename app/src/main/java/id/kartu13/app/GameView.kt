@@ -827,6 +827,7 @@ class GameView(ctx: Context) : View(ctx) {
         fun buttonLp(weight: Float, margin: Int = 0) = LinearLayout.LayoutParams(0, d(46f).toInt(), weight).apply {
             if (margin > 0) marginStart = margin
         }
+        var multiplayerDialog: AlertDialog? = null
         val join = actionButton("GABUNG", false) {
             val n = nameInput.text.toString().trim()
             if (n.isEmpty()) { roomMessage = "Nama pemain wajib diisi."; invalidate(); return@actionButton }
@@ -838,8 +839,14 @@ class GameView(ctx: Context) : View(ctx) {
             if (n.isEmpty()) { roomMessage = "Nama pemain wajib diisi."; invalidate(); return@actionButton }
             roomMessage = "Membuat room..."; invalidate()
             firebase.createRoom(n) { result ->
-                if (result.isSuccess) enterRoom(result.getOrThrow())
-                else { roomMessage = result.exceptionOrNull()?.message ?: "Gagal membuat room."; invalidate() }
+                if (result.isSuccess) {
+                    // Tutup dialog Multiplayer setelah room berhasil dibuat.
+                    multiplayerDialog?.dismiss()
+                    enterRoom(result.getOrThrow())
+                } else {
+                    roomMessage = result.exceptionOrNull()?.message ?: "Gagal membuat room."
+                    invalidate()
+                }
             }
         }
         val gap = d(7f).toInt()
@@ -851,6 +858,7 @@ class GameView(ctx: Context) : View(ctx) {
         root.addView(buttons, buttonsLp)
 
         val dialog = AlertDialog.Builder(context).setView(root).create()
+        multiplayerDialog = dialog
         cancel.setOnClickListener { dialog.dismiss() }
         dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         dialog.setOnShowListener {
