@@ -787,7 +787,8 @@ class GameView(ctx: Context) : View(ctx) {
                     dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(GOLD)
                     dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(GOLD)
                     dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(MUTE)
-                    dialog.findViewById<android.widget.TextView>(android.R.id.alertTitle)?.setTextColor(GOLD)
+                    val titleId = context.resources.getIdentifier("alertTitle", "id", "android")
+                    if (titleId != 0) dialog.findViewById<android.widget.TextView>(titleId)?.setTextColor(GOLD)
                     val messageId = context.resources.getIdentifier("message", "id", "android")
                     dialog.findViewById<android.widget.TextView>(messageId)?.setTextColor(INK)
                 }
