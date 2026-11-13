@@ -850,11 +850,11 @@ class GameView(ctx: Context) : View(ctx) {
         dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         dialog.setOnShowListener {
             dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-            dialog.window?.setLayout((w * .94f).toInt().coerceAtLeast(d(280f).toInt()), -2)
+            dialog.window?.setLayout((width * .94f).toInt().coerceAtLeast(d(280f).toInt()), -2)
         }
         dialog.show()
         dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-        dialog.window?.setLayout((w * .94f).toInt().coerceAtLeast(d(280f).toInt()), -2)
+        dialog.window?.setLayout((width * .94f).toInt().coerceAtLeast(d(280f).toInt()), -2)
     }
 
     private fun showJoinRoomDialog(name: String) {
@@ -927,7 +927,7 @@ class GameView(ctx: Context) : View(ctx) {
         root.addView(row, lp)
         dialog.show()
         dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-        dialog.window?.setLayout((w * .92f).toInt().coerceAtLeast(d(280f).toInt()), -2)
+        dialog.window?.setLayout((width * .92f).toInt().coerceAtLeast(d(280f).toInt()), -2)
     }
 
     private fun enterRoom(code: String) {
