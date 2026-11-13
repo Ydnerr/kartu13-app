@@ -48,14 +48,16 @@ Implementasi awal **3a** sudah masuk ke source:
 - ✅ Host dapat tambah/hapus bot, mengatur level bot, dan host aktif menjalankan giliran bot.
 - ✅ Adapter `GameWire` membaca/menulis struktur data web v44 (`order`, `hands`, `turn`, `last`, `passed`, `dec`, `fin`, `log`, dan seterusnya).
 - ✅ Aksi pemain dan keputusan kartu murni memakai transaksi Firebase; versi `VMAJ` dicek sebelum state dipakai.
-- ⬜ Failover host saat host putus / AFK belum selesai. Ini bergantung pada presence Tahap 3b; untuk saat ini bot hanya diproses oleh host yang sedang aktif.
+- 🟡 Failover host saat host putus / AFK mulai ditangani di Tahap 3b melalui effective driver. Hak administrasi lobby (tambah/hapus bot dan mulai game pertama) tetap milik host asli.
 - ✅ Pemolesan visual awal dialog Multiplayer dan Lobby: panel felt gelap, aksen emas, kode room sebagai fokus, daftar pemain berbaris, dan tombol host lebih terstruktur.
 
-Catatan: source sudah ditambahkan, tetapi build Android penuh belum dijalankan di lingkungan ini karena Gradle/Android SDK tidak tersedia. Build dan uji dua perangkat (Android + web) masih wajib sebelum dianggap rilis.
-- **3b. Presence**
-  - ⬜ Online / away / putus / AFK, heartbeat 5 detik, `onDisconnect` (`presUp`, `beat`, `pinfo`)
-  - ⬜ Bot ambil alih setelah pemain AFK (jeda 8 detik, maks 20 detik pindah app)
-  - ⬜ Indikator ping server dan ping pemain (batang sinyal), status server
+Catatan: source sudah ditambahkan. Build Android penuh belum dijalankan di lingkungan ini karena Gradle/Android SDK tidak tersedia. Build dan uji dua perangkat (Android + web) masih wajib sebelum dianggap rilis.
+- **🟡 3b. Presence (implementasi awal, perlu uji silang web + Android)**
+  - ✅ Online / away / putus / AFK mengikuti protokol web v44 (`presence/{pid}`: `online`, `seen`, `ping`, `hid`, `off`); heartbeat 8 detik sesuai implementasi aktual `game.js` (komentar web menyebut 5 detik, interval kode adalah 8 detik).
+  - ✅ `onDisconnect` menandai pemain offline; server time offset dipakai untuk perhitungan waktu.
+  - ✅ Bot dapat mengambil giliran pemain AFK setelah grace period; effective driver mengikuti prioritas host aktif lalu pemain aktif berikutnya.
+  - ✅ Indikator status dan ping di lobby serta kursi pemain; palet hijau / amber / merah mengikuti versi web.
+  - ⬜ Validasi runtime dua klien (Android ↔ web), terutama saat app masuk background, koneksi putus mendadak, dan reconnect. Belum boleh dianggap rilis sebelum pengujian ini lolos.
 - **3c. Chat dan reaksi**
   - ⬜ Chat room (maks 140 huruf) + 4 chip pesan cepat, badge pesan belum dibaca, toast
   - ⬜ Reaksi emoji melayang: 😂 🔥 👏 😭 😡 🤡 💀 👀
@@ -76,7 +78,7 @@ Catatan: source sudah ditambahkan, tetapi build Android penuh belum dijalankan d
 - Dependensi `firebase-database` memakai Firebase Android BoM `35.2.0`.
 - Konfigurasi Firebase Android diinisialisasi dari konfigurasi publik yang sama dengan web, jadi `google-services.json` belum dipakai.
 - API key Firebase yang tertanam di aplikasi klien bukan kredensial rahasia. Batas keamanan sebenarnya ada pada Realtime Database Rules. Jangan memakai aturan `read/write: true` untuk database produksi; atur autentikasi dan validasi rules sebelum room dibuka ke publik.
-- Aplikasi Android belum mengimplementasikan presence / `onDisconnect`. Jika aplikasi ditutup paksa, entri pemain bisa tertinggal di room sampai dibersihkan. Itu bagian Tahap 3b.
+- Presence Android kini menulis heartbeat dan mendaftarkan `onDisconnect`. Ketepatan status saat proses dihentikan dan kompatibilitas penuh dengan web tetap perlu diuji pada perangkat nyata.
 
 ## Keputusan teknis berikutnya
 - **Room campur web + Android:** sudah dipilih. Kedua klien memakai struktur Firebase dan `VMAJ` yang sama (`44`).

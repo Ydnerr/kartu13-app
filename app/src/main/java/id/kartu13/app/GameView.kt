@@ -343,9 +343,14 @@ class GameView(ctx: Context) : View(ctx) {
         }
     }
 
-    fun onResume() { snd.resume() }
+    fun onResume() { snd.resume(); firebase.setAppVisible(true) }
 
-    fun onPause() { snd.pause() }
+    fun onPause() { snd.pause(); firebase.setAppVisible(false) }
+
+    override fun onWindowVisibilityChanged(visibility: Int) {
+        super.onWindowVisibilityChanged(visibility)
+        if (visibility == View.VISIBLE) firebase.setAppVisible(true) else firebase.setAppVisible(false)
+    }
 
     fun stop() {
         handler.removeCallbacksAndMessages(null)
@@ -966,6 +971,42 @@ class GameView(ctx: Context) : View(ctx) {
         }
     }
 
+    // Indikator presence mengikuti palet status web v44: hijau, amber, merah, dan bot.
+    private fun drawPresence(c: Canvas, x: Float, y: Float, status: FirebaseRoom.PlayerStatus, compact: Boolean = false) {
+        val color = when (status.state) {
+            "bot" -> GOLD
+            "away" -> Color.parseColor("#e0b44c")
+            "off" -> Color.parseColor("#ffb36b")
+            "afk" -> BADC
+            else -> OKC
+        }
+        val r = d(if (compact) 3.2f else 4f)
+        paint.style = Paint.Style.FILL
+        paint.color = color
+        c.drawCircle(x, y, r, paint)
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = d(1f)
+        paint.color = Color.argb(100, 255, 255, 255)
+        c.drawCircle(x, y, r + d(1.4f), paint)
+        paint.style = Paint.Style.FILL
+        val label = when (status.state) {
+            "bot" -> "BOT"
+            "away" -> "AWAY"
+            "off" -> "PUTUS"
+            "afk" -> "AFK · BOT"
+            else -> status.ping?.let { "${it} ms" } ?: "ONLINE"
+        }
+        txt(c, label, x + d(9f), y + d(3.5f), d(if (compact) 8f else 9f), color, Paint.Align.LEFT, true)
+        if (status.state == "on" && status.ping != null) {
+            val bars = when { status.ping < 120 -> 3; status.ping < 300 -> 2; else -> 1 }
+            for (i in 0 until 3) {
+                val bh = d(3f + i * 2.2f)
+                paint.color = if (i < bars) color else Color.argb(55, 255, 255, 255)
+                c.drawRoundRect(x - d(34f) + d(i * 4.5f), y + d(4f) - bh, x - d(31f) + d(i * 4.5f), y + d(4f), d(1f), d(1f), paint)
+            }
+        }
+    }
+
     private fun drawLobby(c: Canvas, l: Float, t: Float, w: Float, b: Float) {
         val state = roomState ?: return
         val cx = l + w / 2
@@ -987,6 +1028,8 @@ class GameView(ctx: Context) : View(ctx) {
         box(c, boxR, Color.argb(165, 4, 25, 20), Color.argb(100, 224, 180, 76), d(1f), d(15f))
         txt(c, "PEMAIN", boxR.left + d(14f), boxR.top + d(24f), d(11f), GOLD, Paint.Align.LEFT, true)
         txt(c, "${state.players.size}/4", boxR.right - d(14f), boxR.top + d(24f), d(11f), MUTE, Paint.Align.RIGHT, true)
+        val srv = if (!state.connected) "SERVER OFFLINE" else state.myPing?.let { "SERVER · ${it} ms" } ?: "SERVER ONLINE"
+        txt(c, srv, boxR.right - d(14f), boxR.top + d(39f), d(8f), if (state.connected) OKC else BADC, Paint.Align.RIGHT, true)
         var yy = boxR.top + d(48f)
         state.players.forEachIndexed { index, p ->
             val row = RectF(boxR.left + d(9f), yy - d(17f), boxR.right - d(9f), yy + d(15f))
@@ -995,9 +1038,10 @@ class GameView(ctx: Context) : View(ctx) {
             val isMe = p.id == firebase.playerId
             val label = p.name + (if (isMe) "  · KAMU" else "")
             txt(c, label, row.left + d(9f), yy + d(5f), d(14f), if (isMe) GOLD else INK, Paint.Align.LEFT, isMe)
-            val badge = when { p.bot -> "BOT"; isHost -> "HOST"; else -> "ONLINE" }
-            val badgeColor = if (p.bot) MUTE else OKC
-            txt(c, badge, row.right - d(9f), yy + d(5f), d(9f), badgeColor, Paint.Align.RIGHT, true)
+            val status = firebase.playerStatus(p.id, state.players)
+            val badge = if (isHost) "HOST" else ""
+            if (badge.isNotEmpty()) txt(c, badge, row.right - d(9f), yy - d(2f), d(8f), GOLD, Paint.Align.RIGHT, true)
+            drawPresence(c, row.right - d(74f), yy + d(8f), status)
             if (state.host == firebase.playerId && p.bot) {
                 button(c, RectF(row.right - d(57f), yy - d(13f), row.right - d(4f), yy + d(13f)), "Hapus", "rmBot", true, true, index, 9f)
             }
@@ -1320,6 +1364,18 @@ class GameView(ctx: Context) : View(ctx) {
             else if (g.dec.contains(p)) "murni, milih..."
             else ""
             txt(c, st, r.centerX(), r.top + d(38f), d(12f), MUTE)
+            if (multiplayer && seatPids.getOrNull(p) != null) {
+                val pid = seatPids[p]
+                val status = firebase.playerStatus(pid, roomState?.players ?: emptyList())
+                val statusText = when (status.state) {
+                    "bot" -> "🤖 BOT"
+                    "away" -> "🌙 AWAY"
+                    "off" -> "PUTUS"
+                    "afk" -> "AFK · BOT"
+                    else -> status.ping?.let { "${it} ms" } ?: "ONLINE"
+                }
+                txt(c, statusText, r.centerX(), r.bottom - d(7f), d(8f), when (status.state) { "afk", "off" -> BADC; "away" -> GOLD; else -> OKC }, Paint.Align.CENTER, true)
+            }
         }
 
         // ukuran tangan & posisi tombol
@@ -1558,7 +1614,9 @@ class GameView(ctx: Context) : View(ctx) {
         val by = tr.bottom - d(64f)
         val gap = d(8f)
         val bwid = (tr.width() - d(32f) - gap) / 2
-        button(c, RectF(tr.left + d(16f), by, tr.left + d(16f) + bwid, by + d(48f)), "Main lagi", "again", true, false)
+        val canAgain = !multiplayer || roomState?.effectiveDriver == firebase.playerId
+        if (canAgain) button(c, RectF(tr.left + d(16f), by, tr.left + d(16f) + bwid, by + d(48f)), "Main lagi", "again", true, false)
+        else txt(c, "Menunggu pengendali aktif", tr.left + d(16f) + bwid / 2, by + d(29f), d(9f), MUTE, Paint.Align.CENTER)
         button(c, RectF(tr.right - d(16f) - bwid, by, tr.right - d(16f), by + d(48f)), "Menu", "menu", true, true)
     }
 }

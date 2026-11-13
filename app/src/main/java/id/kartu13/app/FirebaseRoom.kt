@@ -9,6 +9,9 @@ import com.google.firebase.database.DatabaseReference
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.MutableData
 import com.google.firebase.database.Transaction
+import com.google.firebase.database.ServerValue
+import android.os.Handler
+import android.os.Looper
 import com.google.firebase.database.ValueEventListener
 import java.util.UUID
 import kotlin.random.Random
@@ -45,13 +48,19 @@ class FirebaseRoom(context: Context) {
     }
 
     data class Player(val id: String, val name: String, val joinedAt: Long, val bot: Boolean)
+    data class Presence(val online: Boolean?, val seen: Long, val ping: Long?, val hiddenAt: Long, val offAt: Long)
+    data class PlayerStatus(val state: String, val ping: Long? = null) // on, away, off, afk, bot
     data class RoomState(
         val code: String,
         val host: String,
         val status: String,
         val players: List<Player>,
         val botLevel: Int,
-        val game: Map<String, Any?>?
+        val game: Map<String, Any?>?,
+        val presence: Map<String, Presence> = emptyMap(),
+        val connected: Boolean = false,
+        val myPing: Long? = null,
+        val effectiveDriver: String = host
     )
 
     private val prefs = context.getSharedPreferences("k13", Context.MODE_PRIVATE)
@@ -63,6 +72,25 @@ class FirebaseRoom(context: Context) {
         private set
     private var roomRef: DatabaseReference? = null
     private val listeners = ArrayList<Pair<DatabaseReference, ValueEventListener>>()
+    private val main = Handler(Looper.getMainLooper())
+    private var presenceListener: ValueEventListener? = null
+    private var connectedListener: ValueEventListener? = null
+    private var offsetListener: ValueEventListener? = null
+    private var connected = false
+    private var serverOffset = 0L
+    private var myPing: Long? = null
+    private var hiddenAt = 0L
+    private var connectionAt = 0L
+    private var roomPlayers: List<Player> = emptyList()
+    private var roomHost = ""
+    private var roomStatus = "lobby"
+    private var roomPresence: Map<String, Presence> = emptyMap()
+    private var roomBotLevel = 1
+    private var roomGame: Map<String, Any?>? = null
+    private var roomCode: String? = null
+    private var roomCallback: ((Result<RoomState>) -> Unit)? = null
+    private val heartbeat = object : Runnable { override fun run() { sendHeartbeat(); main.postDelayed(this, 8_000L) } }
+    private val presenceTick = object : Runnable { override fun run() { publishState(); main.postDelayed(this, 2_000L) } }
 
     fun savedName(): String = prefs.getString("name", "") ?: ""
     fun saveName(name: String) { prefs.edit().putString("name", name.trim().take(14)).apply() }
@@ -132,6 +160,8 @@ class FirebaseRoom(context: Context) {
 
     fun listen(code: String, onChange: (Result<RoomState>) -> Unit) {
         stopListening()
+        roomCode = code
+        roomCallback = onChange
         val ref = db.child("rooms").child(code)
         roomRef = ref
         val cache = HashMap<String, Any?>()
@@ -148,10 +178,7 @@ class FirebaseRoom(context: Context) {
                     val players = rawPlayers.entries.mapNotNull { entry ->
                         val id = entry.key as? String ?: return@mapNotNull null
                         val data = entry.value as? Map<*, *> ?: emptyMap<Any, Any>()
-                        val name = data["n"] as? String ?: "Pemain"
-                        val joined = (data["t"] as? Number)?.toLong() ?: 0L
-                        val bot = data["bot"] as? Boolean ?: false
-                        Player(id, name, joined, bot)
+                        Player(id, data["n"] as? String ?: "Pemain", (data["t"] as? Number)?.toLong() ?: 0L, data["bot"] as? Boolean ?: false)
                     }.sortedBy { it.joinedAt }
                     if (players.none { it.id == playerId }) {
                         currentCode = null
@@ -159,27 +186,121 @@ class FirebaseRoom(context: Context) {
                         onChange(Result.failure(IllegalStateException("Kamu sudah tidak terdaftar di room.")))
                         return
                     }
-                    val botMap = cache["bot"] as? Map<*, *>
-                    val state = RoomState(
-                        code = code,
-                        host = cache["host"] as? String ?: "",
-                        status = cache["status"] as? String ?: "lobby",
-                        players = players,
-                        botLevel = (botMap?.get("lv") as? Number)?.toInt() ?: 1,
-                        game = cache["game"] as? Map<String, Any?>
-                    )
-                    onChange(Result.success(state))
+                    roomPlayers = players
+                    roomHost = cache["host"] as? String ?: ""
+                    roomStatus = cache["status"] as? String ?: "lobby"
+                    roomBotLevel = ((cache["bot"] as? Map<*, *>)?.get("lv") as? Number)?.toInt() ?: 1
+                    roomGame = cache["game"] as? Map<String, Any?>
+                    publishState()
                 }
                 override fun onCancelled(error: DatabaseError) = onChange(Result.failure(error.toException()))
             }
             listeners.add(childRef to l)
             childRef.addValueEventListener(l)
         }
+        presenceListener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val map = LinkedHashMap<String, Presence>()
+                snapshot.children.forEach { child ->
+                    val online = child.child("online").getValue(Boolean::class.java)
+                    map[child.key ?: return@forEach] = Presence(
+                        online,
+                        (child.child("seen").value as? Number)?.toLong() ?: 0L,
+                        (child.child("ping").value as? Number)?.toLong(),
+                        (child.child("hid").value as? Number)?.toLong() ?: 0L,
+                        (child.child("off").value as? Number)?.toLong() ?: 0L
+                    )
+                }
+                roomPresence = map
+                publishState()
+            }
+            override fun onCancelled(error: DatabaseError) { }
+        }
+        ref.child("presence").addValueEventListener(presenceListener!!)
+        connectedListener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                connected = snapshot.getValue(Boolean::class.java) == true
+                if (connected) { connectionAt = System.currentTimeMillis(); registerDisconnect(); sendHeartbeat() }
+                else myPing = null
+                publishState()
+            }
+            override fun onCancelled(error: DatabaseError) { connected = false; publishState() }
+        }
+        db.child(".info/connected").addValueEventListener(connectedListener!!)
+        offsetListener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) { serverOffset = (snapshot.value as? Number)?.toLong() ?: 0L }
+            override fun onCancelled(error: DatabaseError) { }
+        }
+        db.child(".info/serverTimeOffset").addValueEventListener(offsetListener!!)
+        main.removeCallbacks(heartbeat); main.postDelayed(heartbeat, 8_000L)
+        main.removeCallbacks(presenceTick); main.postDelayed(presenceTick, 2_000L)
         remember(code)
     }
 
+    private fun serverNow(): Long = System.currentTimeMillis() + serverOffset
+
+    private fun registerDisconnect() {
+        val ref = roomRef ?: return
+        // Register server-side disconnect before publishing online, matching web v44.
+        ref.child("presence").child(playerId).onDisconnect().updateChildren(mapOf("online" to false, "off" to ServerValue.TIMESTAMP))
+            .addOnSuccessListener { sendHeartbeat() }
+    }
+
+    private fun sendHeartbeat() {
+        val ref = roomRef ?: return
+        if (!connected) return
+        val now = serverNow()
+        val hidden = hiddenAt > 0L
+        val started = System.currentTimeMillis()
+        val values = hashMapOf<String, Any?>(
+            "online" to true,
+            "seen" to ServerValue.TIMESTAMP,
+            "ping" to myPing,
+            "hid" to if (hidden) hiddenAt else null
+        )
+        ref.child("presence").child(playerId).updateChildren(values).addOnCompleteListener { task ->
+            if (task.isSuccessful && !hidden) {
+                myPing = (System.currentTimeMillis() - started).coerceAtLeast(0L)
+                publishState()
+            }
+        }
+    }
+
+    fun setAppVisible(visible: Boolean) {
+        hiddenAt = if (visible) 0L else if (hiddenAt == 0L) serverNow() else hiddenAt
+        sendHeartbeat()
+    }
+
+    fun playerStatus(id: String, statePlayers: List<Player> = roomPlayers): PlayerStatus {
+        val player = statePlayers.firstOrNull { it.id == id } ?: return PlayerStatus("off")
+        if (player.bot) return PlayerStatus("bot")
+        val pr = roomPresence[id] ?: return PlayerStatus("on")
+        val now = serverNow()
+        var since = 0L
+        if (pr.online == false) since = if (pr.offAt > 0) pr.offAt else pr.seen
+        else if (pr.hiddenAt == 0L && pr.seen > 0L && now - pr.seen > 25_000L) since = pr.seen + 25_000L
+        if (since > 0L) return PlayerStatus(if (now - since > 8_000L) "afk" else "off", pr.ping)
+        if (pr.hiddenAt > 0L) return PlayerStatus(if (now - pr.hiddenAt > 20_000L) "afk" else "away", pr.ping)
+        return PlayerStatus("on", pr.ping)
+    }
+
+    private fun effectiveDriver(): String {
+        val humans = roomPlayers.filter { !it.bot }
+        if (humans.isEmpty()) return roomHost
+        val ordered = humans.sortedWith(compareBy<Player> { if (it.id == roomHost) 0 else 1 }.thenBy { it.joinedAt })
+        return ordered.firstOrNull { it.id == playerId || playerStatus(it.id).state != "afk" }?.id ?: ""
+    }
+
+    private fun publishState() {
+        if (roomPlayers.isEmpty()) return
+        val state = RoomState(roomCode ?: return, roomHost, roomStatus, roomPlayers, roomBotLevel, roomGame,
+            roomPresence, connected, myPing, effectiveDriver())
+        roomCallback?.invoke(Result.success(state))
+    }
+
     fun startGame(state: RoomState, done: (Result<Unit>) -> Unit) {
-        if (state.host != playerId) return done(Result.failure(IllegalStateException("Hanya host yang bisa memulai.")))
+        val mayStart = if (state.status == "lobby") state.host == playerId else state.effectiveDriver == playerId
+        if (!mayStart) return done(Result.failure(IllegalStateException("Menunggu host aktif atau pengendali berikutnya.")))
         if (state.players.size < 2) return done(Result.failure(IllegalStateException("Minimal 2 pemain.")))
         // Rotasi urutan menjaga arah giliran, tetapi menempatkan pemain lokal pada indeks 0 di mesin Kotlin.
         val ids = state.players.map { it.id }
@@ -251,7 +372,8 @@ class FirebaseRoom(context: Context) {
 
     /** Host menjalankan bot dengan transaksi; hanya satu host yang boleh menjadi driver. */
     fun runBotTurn(state: RoomState) {
-        if (state.host != playerId || state.status != "play") return
+        if (state.effectiveDriver != playerId || state.status != "play" || !state.connected) return
+        if (System.currentTimeMillis() - connectionAt < 3_000L) return
         val ref = roomRef?.child("game") ?: return
         ref.runTransaction(object : Transaction.Handler {
             override fun doTransaction(data: MutableData): Transaction.Result {
@@ -259,16 +381,18 @@ class FirebaseRoom(context: Context) {
                 val decoded = GameWire.decode(raw, playerId) ?: return Transaction.abort()
                 val (g, seats) = decoded
                 if (g.over) return Transaction.abort()
-                val botIds = state.players.filter { it.bot }.map { it.id }.toSet()
-                val decisionPid = g.dec.firstOrNull { seats.getOrNull(it) in botIds }
+                val autoIds = state.players.filter { it.bot || (!it.bot && state.players.count { p -> !p.bot } > 1 && playerStatus(it.id, state.players).state == "afk") }.map { it.id }.toSet()
+                val decisionPid = g.dec.firstOrNull { seats.getOrNull(it) in autoIds }
                 if (decisionPid != null) {
-                    decide(g, decisionPid, botDecide(state.botLevel))
+                    val decisionOwner = seats.getOrNull(decisionPid)
+                    val stop = if (state.players.firstOrNull { it.id == decisionOwner }?.bot == true) botDecide(state.botLevel) else false
+                    decide(g, decisionPid, stop)
                     data.value = GameWire.encode(g, seats)
                     return Transaction.success(data)
                 }
                 if (g.dec.isNotEmpty()) return Transaction.abort()
                 val current = g.order.getOrNull(g.turn) ?: return Transaction.abort()
-                if (seats.getOrNull(current) !in botIds || g.fin.contains(current)) return Transaction.abort()
+                if (seats.getOrNull(current) !in autoIds || g.fin.contains(current)) return Transaction.abort()
                 val m = botMove(g, current, state.botLevel)
                 var ok = move(g, current, m.cards ?: emptyList(), m.pass)
                 if (!ok) ok = move(g, current, emptyList(), true)
@@ -343,9 +467,16 @@ class FirebaseRoom(context: Context) {
     }
 
     fun stopListening() {
+        main.removeCallbacks(heartbeat); main.removeCallbacks(presenceTick)
+        roomRef?.child("presence")?.let { ref -> presenceListener?.let { ref.removeEventListener(it) } }
+        presenceListener = null
+        connectedListener?.let { db.child(".info/connected").removeEventListener(it) }; connectedListener = null
+        offsetListener?.let { db.child(".info/serverTimeOffset").removeEventListener(it) }; offsetListener = null
+        roomRef?.child("presence")?.child(playerId)?.onDisconnect()?.cancel()
         listeners.forEach { (ref, listener) -> ref.removeEventListener(listener) }
         listeners.clear()
-        roomRef = null
+        roomRef = null; roomCallback = null; roomPlayers = emptyList(); roomPresence = emptyMap()
+        connected = false; myPing = null; hiddenAt = 0L
     }
 }
 
