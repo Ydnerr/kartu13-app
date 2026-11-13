@@ -6,6 +6,7 @@ import com.google.firebase.FirebaseOptions
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.DatabaseReference
+import com.google.firebase.database.Query
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.MutableData
 import com.google.firebase.database.Transaction
@@ -451,11 +452,11 @@ class FirebaseRoom(context: Context) {
     }
 
 
-    private var chatRef: DatabaseReference? = null
+    private var chatRef: Query? = null
     private var chatListener: ValueEventListener? = null
     private var lastChatSend = 0L
     private var lastReactSend = 0L
-    private var reactRef: DatabaseReference? = null
+    private var reactRef: Query? = null
     private var reactListener: com.google.firebase.database.ChildEventListener? = null
     private val allowedReactions = setOf("😂", "🔥", "👏", "😭", "😡", "🤡", "💀", "👀")
 
