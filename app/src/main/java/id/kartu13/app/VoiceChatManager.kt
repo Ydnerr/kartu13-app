@@ -93,7 +93,7 @@ class VoiceChatManager(context: Context, private val db: DatabaseReference, priv
             voiceRef.child(playerId).setValue(mapOf("t" to ServerValue.TIMESTAMP))
             (app.getSystemService(Context.AUDIO_SERVICE) as AudioManager).mode = AudioManager.MODE_IN_COMMUNICATION
             onStatus("Mikrofon aktif · menunggu pemain lain")
-        } catch (e: Exception) {
+        } catch (e: Throwable) { // Throwable: UnsatisfiedLinkError / NoClassDefFoundError dari native WebRTC bukan Exception
             leave(); onStatus("Voice gagal dimulai: ${e.message ?: "kesalahan WebRTC"}")
         }
     }

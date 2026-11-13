@@ -27,7 +27,7 @@ class FirebaseRoom(context: Context) {
     companion object {
         const val VMAJ = "44"
         private const val DB_URL = "https://poker13-86781-default-rtdb.asia-southeast1.firebasedatabase.app"
-        private const val API_KEY = "AIzaSyDuIFh5L1UQ6fmGXf6gwyqhLNqs_flk6-A"
+        private const val API_KEY = "AIzaSyDuIFh5L1U6QfmGXf6gwyqhLNqs_flk6-A"
         private const val PROJECT_ID = "poker13-86781"
         private const val APP_ID = "1:277404446731:web:1b87947e9c6512f8b4d70e"
         private const val SENDER_ID = "277404446731"
