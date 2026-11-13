@@ -10,6 +10,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.graphics.Paint
 import android.graphics.RadialGradient
 import android.graphics.RectF
@@ -780,7 +781,17 @@ class GameView(ctx: Context) : View(ctx) {
                     }.setNegativeButton("Batal", null).show()
             }
             .setNegativeButton("Batal", null)
-            .show()
+            .create().also { dialog ->
+                dialog.setOnShowListener {
+                    dialog.window?.setBackgroundDrawable(ColorDrawable(Color.rgb(7, 37, 28)))
+                    dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(GOLD)
+                    dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(GOLD)
+                    dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(MUTE)
+                    dialog.findViewById<android.widget.TextView>(android.R.id.alertTitle)?.setTextColor(GOLD)
+                    val messageId = context.resources.getIdentifier("message", "id", "android")
+                    dialog.findViewById<android.widget.TextView>(messageId)?.setTextColor(INK)
+                }
+            }.show()
     }
 
     private fun enterRoom(code: String) {
@@ -822,34 +833,55 @@ class GameView(ctx: Context) : View(ctx) {
     private fun drawLobby(c: Canvas, l: Float, t: Float, w: Float, b: Float) {
         val state = roomState ?: return
         val cx = l + w / 2
-        val m = d(18f)
-        txt(c, "Ruang tunggu", cx, t + d(42f), d(24f), GOLD, Paint.Align.CENTER, true)
-        txt(c, "Kode room", cx, t + d(82f), d(14f), MUTE, Paint.Align.CENTER)
-        txt(c, state.code, cx, t + d(132f), d(42f), INK, Paint.Align.CENTER, true)
-        val top = t + d(158f)
-        val bottom = b - d(180f)
-        val boxR = RectF(l + m, top, l + w - m, bottom)
-        box(c, boxR, PANEL, EDGE, d(1f), d(14f))
-        txt(c, "Pemain (${state.players.size}/4)", boxR.left + d(14f), boxR.top + d(28f), d(15f), GOLD, Paint.Align.LEFT, true)
-        var yy = boxR.top + d(58f)
-        state.players.forEach { p ->
-            val label = p.name + (if (p.id == state.host) " · HOST" else "") + (if (p.id == firebase.playerId) " · KAMU" else "")
-            txt(c, label, boxR.left + d(14f), yy, d(15f), INK, Paint.Align.LEFT)
+        val m = d(16f)
+        val contentW = w - 2 * m
+
+        // Header bergaya meja kartu: hierarki kode room lebih kuat dan punya affordance salin.
+        txt(c, "♠  MEJA MULTIPLAYER  ♥", cx, t + d(27f), d(11f), MUTE, Paint.Align.CENTER, true)
+        txt(c, "Ruang tunggu", cx, t + d(58f), d(25f), GOLD, Paint.Align.CENTER, true)
+        val codeTop = t + d(78f)
+        val codeRect = RectF(l + m, codeTop, l + w - m, codeTop + d(94f))
+        box(c, codeRect, Color.argb(190, 3, 35, 25), Color.argb(150, 224, 180, 76), d(1.4f), d(16f))
+        txt(c, "KODE ROOM · BAGIKAN KE TEMAN", cx, codeRect.top + d(24f), d(10f), MUTE, Paint.Align.CENTER, true)
+        txt(c, state.code, cx, codeRect.top + d(68f), d(37f), INK, Paint.Align.CENTER, true)
+
+        val top = codeRect.bottom + d(14f)
+        val bottom = b - d(if (state.host == firebase.playerId) 184f else 144f)
+        val boxR = RectF(l + m, top, l + w - m, max(top + d(100f), bottom))
+        box(c, boxR, Color.argb(165, 4, 25, 20), Color.argb(100, 224, 180, 76), d(1f), d(15f))
+        txt(c, "PEMAIN", boxR.left + d(14f), boxR.top + d(24f), d(11f), GOLD, Paint.Align.LEFT, true)
+        txt(c, "${state.players.size}/4", boxR.right - d(14f), boxR.top + d(24f), d(11f), MUTE, Paint.Align.RIGHT, true)
+        var yy = boxR.top + d(48f)
+        state.players.forEachIndexed { index, p ->
+            val row = RectF(boxR.left + d(9f), yy - d(17f), boxR.right - d(9f), yy + d(15f))
+            if (index % 2 == 0) box(c, row, Color.argb(45, 255, 255, 255), 0, 0f, d(8f))
+            val isHost = p.id == state.host
+            val isMe = p.id == firebase.playerId
+            val label = p.name + (if (isMe) "  · KAMU" else "")
+            txt(c, label, row.left + d(9f), yy + d(5f), d(14f), if (isMe) GOLD else INK, Paint.Align.LEFT, isMe)
+            val badge = when { p.bot -> "BOT"; isHost -> "HOST"; else -> "ONLINE" }
+            val badgeColor = if (p.bot) MUTE else OKC
+            txt(c, badge, row.right - d(9f), yy + d(5f), d(9f), badgeColor, Paint.Align.RIGHT, true)
             if (state.host == firebase.playerId && p.bot) {
-                button(c, RectF(boxR.right - d(52f), yy - d(22f), boxR.right - d(8f), yy + d(8f)), "Hapus", "rmBot", true, true, state.players.indexOf(p), 10f)
+                button(c, RectF(row.right - d(57f), yy - d(13f), row.right - d(4f), yy + d(13f)), "Hapus", "rmBot", true, true, index, 9f)
             }
-            yy += d(34f)
+            yy += d(37f)
+        }
+        if (state.players.size < 4) {
+            txt(c, "Menunggu ${4 - state.players.size} pemain lagi…", cx, min(boxR.bottom - d(9f), yy + d(5f)), d(10f), MUTE, Paint.Align.CENTER)
         }
         if (state.host == firebase.playerId) {
             val canAdd = state.players.count { !it.bot } >= 2 && state.players.size < 4
-            val half = (w - 2 * m - d(8f)) / 2
-            button(c, RectF(l + m, b - d(164f), l + m + half, b - d(120f)), "Tambah bot", "addBot", canAdd, true)
-            button(c, RectF(l + m + half + d(8f), b - d(164f), l + w - m, b - d(120f)), "Level: ${LEVELS[state.botLevel]}", "botLevel", true, true, state.botLevel)
-            button(c, RectF(l + m, b - d(110f), l + w - m, b - d(62f)), "Mulai game", "lobbyStart", state.players.size >= 2, false)
+            val half = (contentW - d(8f)) / 2
+            button(c, RectF(l + m, b - d(169f), l + m + half, b - d(125f)), "+  Tambah bot", "addBot", canAdd, true, -1, 13f)
+            button(c, RectF(l + m + half + d(8f), b - d(169f), l + w - m, b - d(125f)), "Bot: ${LEVELS[state.botLevel]}", "botLevel", true, true, state.botLevel, 12f)
+            button(c, RectF(l + m, b - d(113f), l + w - m, b - d(61f)), "MULAI PERMAINAN", "lobbyStart", state.players.size >= 2, false, -1, 15f)
         } else {
-            txt(c, "Menunggu host memulai game...", cx, b - d(130f), d(14f), MUTE, Paint.Align.CENTER)
+            val waitR = RectF(l + m, b - d(130f), l + w - m, b - d(76f))
+            box(c, waitR, Color.argb(100, 255, 255, 255), Color.argb(65, 255, 255, 255), d(1f), d(12f))
+            txt(c, "◌  Menunggu host memulai permainan", cx, waitR.centerY() + d(4f), d(12f), MUTE, Paint.Align.CENTER)
         }
-        button(c, RectF(l + m, b - d(54f), l + w - m, b - d(8f)), "Keluar room", "lobbyExit", true, true)
+        button(c, RectF(l + m, b - d(53f), l + w - m, b - d(7f)), "Keluar room", "lobbyExit", true, true)
         if (roomMessage.isNotEmpty()) txt(c, roomMessage, cx, b - d(2f), d(10f), WARN, Paint.Align.CENTER)
     }
 

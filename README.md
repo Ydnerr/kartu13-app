@@ -49,6 +49,7 @@ Implementasi awal **3a** sudah masuk ke source:
 - ✅ Adapter `GameWire` membaca/menulis struktur data web v44 (`order`, `hands`, `turn`, `last`, `passed`, `dec`, `fin`, `log`, dan seterusnya).
 - ✅ Aksi pemain dan keputusan kartu murni memakai transaksi Firebase; versi `VMAJ` dicek sebelum state dipakai.
 - ⬜ Failover host saat host putus / AFK belum selesai. Ini bergantung pada presence Tahap 3b; untuk saat ini bot hanya diproses oleh host yang sedang aktif.
+- ✅ Pemolesan visual awal dialog Multiplayer dan Lobby: panel felt gelap, aksen emas, kode room sebagai fokus, daftar pemain berbaris, dan tombol host lebih terstruktur.
 
 Catatan: source sudah ditambahkan, tetapi build Android penuh belum dijalankan di lingkungan ini karena Gradle/Android SDK tidak tersedia. Build dan uji dua perangkat (Android + web) masih wajib sebelum dianggap rilis.
 - **3b. Presence**
