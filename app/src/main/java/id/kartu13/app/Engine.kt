@@ -511,7 +511,7 @@ fun why(g: Game, me: Int, cards: List<Int>): String {
     }
     if (last != null && !beats(e, last)) {
         if (e.t != last.t || e.n != last.n) {
-            return "Harus jenis dan jumlah kartu yang sama: " + (if (isJqk(last)) jqkName(last).lowercase() else (TYPE_NAME[last.t] ?: "") + (if (last.t == 'r') " " + last.n + " kartu" else "") + "."
+            return "Harus jenis dan jumlah kartu yang sama: " + (if (isJqk(last)) jqkName(last).lowercase() else (TYPE_NAME[last.t] ?: "") + (if (last.t == 'r') " " + last.n + " kartu" else "")) + "."
         }
         return if (e.t == 'f' || e.t == 'x' || e.t == 'g') "Bagian utamanya (3 kembar / seri / 4 kembar) harus lebih tinggi dari yang di meja. Pasangannya bebas." else "Kartunya kurang tinggi dari yang di meja."
     }
