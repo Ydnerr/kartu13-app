@@ -12,6 +12,7 @@ Prinsip: tanpa WebView. Setiap tahap harus bisa di-build dan dimainkan sendiri s
 ### ✅ Tahap 1: main lawan bot
 - ✅ Mesin aturan lengkap (port `ev`, `beats`, `cuts`, `move`, `decide`, `deal`)
 - ✅ Bot 4 level (Mudah, Sedang, Susah, Master)
+- ✅ **Seri spesial J Q K (v45):** tepat 3 kartu J, Q, K satu logo dihitung sebagai seri 3 kartu tertinggi (menang lawan seri 3 kartu biasa, bukan bom, boleh + 1 pasangan = 5 kartu, nggak bisa disambung ke 10 atau A). Sudah masuk `ev`, `combos` (bot ikut bisa pakai), tombol Kelompokkan, label meja, pesan aturan, dan tutorial. `VMAJ` naik ke `v45` bersamaan dengan web, jadi app v44 dan web v45 nggak bisa main satu room.
 - ✅ Halaman aturan (versi teks)
 - ✅ Gambar kartu asli (webp, Vecteezy)
 
@@ -46,7 +47,7 @@ Implementasi awal **3a** sudah masuk ke source:
 - ✅ ID pemain lokal tetap, buat room 5 digit, join room, dan ingat kode room terakhir.
 - ✅ Lobby: daftar pemain, penanda host, keluar room, dan mulai game minimal 2 pemain.
 - ✅ Host dapat tambah/hapus bot, mengatur level bot, dan host aktif menjalankan giliran bot.
-- ✅ Adapter `GameWire` membaca/menulis struktur data web v44 (`order`, `hands`, `turn`, `last`, `passed`, `dec`, `fin`, `log`, dan seterusnya).
+- ✅ Adapter `GameWire` membaca/menulis struktur data web v45 (`order`, `hands`, `turn`, `last`, `passed`, `dec`, `fin`, `log`, dan seterusnya).
 - ✅ Aksi pemain dan keputusan kartu murni memakai transaksi Firebase; versi `VMAJ` dicek sebelum state dipakai.
 - ✅ Perbaikan kompatibilitas web ↔ Android: `VMAJ` sekarang `v44` (web memakai `VER.split('.')[0]` = `v44`, sebelumnya app memakai `44` sehingga game yang dimulai host web ditolak dan app tertahan di ruang tunggu), `stopped` ditulis sebagai objek `{pid: true}` seperti web, dan penanda `x` (lewat) dari web yang bernilai angka `1` ikut terbaca
 - ✅ Dialog Multiplayer otomatis tertutup setelah berhasil buat / gabung room (sebelumnya tertinggal di atas ruang tunggu kalau masuk lewat GABUNG)
@@ -77,6 +78,7 @@ Catatan: source sudah ditambahkan. Build Android penuh belum dijalankan di lingk
 - ✅ Mute: tap tombol mic saat mode open mic (🎙 / 🔇)
 - ✅ Mode open mic / tahan-ngomong (push-to-talk), pilihan tersimpan (`ptt`, sama dengan `k13ptt` di web). Mode tahan: mulai mute, tahan tombol ✋ untuk bicara, lepas untuk mute
 - ✅ Tombol **Keluar** voice (baris voice di lobby dan layar main)
+- ✅ Suara voice keluar lewat **speaker luar**, bukan speaker telinga seperti telepon (`MODE_IN_COMMUNICATION` default-nya ke earpiece). Kalau ada headset kabel / USB / Bluetooth, itu yang dipakai; jalur diatur ulang otomatis saat headset dicolok atau dicabut, dan dikembalikan normal saat keluar voice
 - ✅ Voice hanya bisa dimulai kalau ada minimal 2 pemain asli di room (sama dengan web)
 - ✅ Indikator siapa yang lagi ngomong: cincin hijau + 🎙 di kursi pemain, baris lobby, dan tombol mic sendiri (`VoiceChatManager.speakingIds`; level mic dari sampel audio, level lawan dari statistik `inbound-rtp`; ambang sama dengan web)
 - ✅ Status sambungan per pemain (`peerState`): `VOICE ✓ / … / ✕` di lobby, `VC ✓ / … / ✕` di kursi, plus ringkasan "nyambung x/y" di baris voice
