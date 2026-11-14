@@ -59,7 +59,8 @@ private val RULES = arrayOf(
     "Urutan kartu: 3 4 5 6 7 8 9 10 J Q K A 2. Makin ke kanan makin kuat.",
     "Logo nggak ikut dibandingkan (angka sama nggak bisa saling kalahin). Logo cuma dipakai buat nentuin 3♠ di fase kumpulin 3.",
     "Kombinasi: tunggal, pasangan, 3 kembar, 4 kembar (bom), seri, 3 kembar + pasangan, 4 kembar + pasangan, seri + pasangan, dan 8 kartu kembar (bom x2).",
-    "Seri harus satu logo semua (minimal 3 kartu, cuma angka 3 sampai 10). Seri 5 kartu satu logo juga bom.",
+    "Seri harus satu logo semua (minimal 3 kartu, angka 3 sampai 10). Seri 5 kartu satu logo juga bom.",
+    "Seri spesial: J Q K satu logo (3 kartu, boleh + 1 pasangan) juga dianggap seri, dan jadi seri tertinggi di jenisnya. Nggak bisa disambung ke 10 atau A.",
     "Kombinasi + pasangan: cuma bagian utamanya (3 kembar / seri / 4 kembar) yang dibandingkan, pasangannya bebas asal kembar.",
     "Bom yang menimpa kartu 2 = langsung menang. 2 tunggal bisa dipotong 4 kembar / seri 5 / bom x2. 2 kembar cuma bisa dipotong 8 kartu kembar.",
     "Habis kartu pakai 2 = ngebom diri sendiri, kalah, game diulang dari kumpulin 3.",
@@ -1605,7 +1606,7 @@ class GameView(ctx: Context) : View(ctx) {
                 txt(c, if (g.first) "Pemegang angka 3 keluarin semua kartu 3-nya" else "Bebas keluarin kombinasi apa aja",
                     tr.centerX(), tr.centerY() + d(18f), d(13f), MUTE)
             } else {
-                val title = playerName(last.p) + " · " + (TYPE_NAME[last.t] ?: "") + (if (last.t == 'r') " " + last.n else "")
+                val title = playerName(last.p) + " · " + typeLabel(last)
                 txt(c, title, tr.centerX(), tr.top + d(28f), d(15f), INK, Paint.Align.CENTER, true)
                 val n = last.c.size
                 val availH = tr.height() - d(80f)

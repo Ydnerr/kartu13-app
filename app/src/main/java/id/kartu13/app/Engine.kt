@@ -18,6 +18,12 @@ class Ev(val t: Char, val n: Int, val k: Int, val k2: Int = 0, val m: List<Int> 
 
 class Last(val p: Int, val c: List<Int>, val t: Char, val n: Int, val k: Int, val k2: Int)
 
+/** Seri spesial J Q K satu logo (3 kartu, atau + pasangan = 5 kartu). Seri biasa maksimal angka 10, jadi kunci K pasti J Q K. */
+fun isJqk(l: Last?): Boolean = l != null && (l.t == 'r' || l.t == 'x') && rk(l.k) == 10
+fun jqkName(l: Last): String = if (l.t == 'x') "Seri spesial J Q K + pasangan" else "Seri spesial J Q K"
+/** Nama jenis kombinasi di meja. */
+fun typeLabel(l: Last): String = if (isJqk(l)) jqkName(l) else (TYPE_NAME[l.t] ?: "") + (if (l.t == 'r') " " + l.n else "")
+
 class LogE(val p: Int, val c: List<Int>? = null, val m: String? = null, val x: Boolean = false)
 
 class Opt(val cs: List<Int>, val e: Ev) { var s: Double = 0.0 }
@@ -60,6 +66,8 @@ fun ev(cs: List<Int>): Ev? {
         for (i in 1 until n) if (r[i] != r[i - 1] + 1) seq = false
         if (seq && c.all { su(it) == su(c[0]) }) return Ev('r', n, top)
     }
+    // SERI SPESIAL: J Q K satu logo (3 kartu). Jadi seri 3 kartu tertinggi (kuncinya K), sama dengan web v45
+    if (n == 3 && r[0] == 8 && r[1] == 9 && r[2] == 10 && c.all { su(it) == su(c[0]) }) return Ev('r', n, top)
     if (n == 5) {
         val gs = groupByRank(c)
         val tri = gs.firstOrNull { it.size == 3 }
@@ -77,6 +85,15 @@ fun ev(cs: List<Int>): Ev? {
         val q4 = gs.firstOrNull { it.size == 4 }
         val pr = gs.firstOrNull { it.size == 2 }
         if (gs.size == 2 && q4 != null && pr != null) return Ev('g', n, q4.max(), pr.max(), q4)
+    }
+    if (n == 5) { // SERI SPESIAL J Q K satu logo + pasangan
+        for (s in 0..3) {
+            val core = listOf(8, 9, 10).map { it * 4 + s }
+            if (c.containsAll(core)) {
+                val rest = c.filter { !core.contains(it) }
+                if (rest.size == 2 && rk(rest[0]) == rk(rest[1])) return Ev('x', n, core[2], rest.max(), core)
+            }
+        }
     }
     if (n >= 5) {
         val len = n - 2
@@ -337,6 +354,7 @@ fun combos(hand: List<Int>): List<Opt> {
             }
         }
     }
+    for (s in 0..3) { val q = listOf(8, 9, 10).map { it * 4 + s }; if (c.containsAll(q)) out.add(q) } // seri spesial J Q K satu logo
     out.addAll(sers)
     for (r in rs) {
         val b = by[r]!!
@@ -349,6 +367,7 @@ fun combos(hand: List<Int>): List<Opt> {
         }
     }
     for (sr in sers) for (p in prs) if (p.none { sr.contains(it) }) out.add(sr + p)
+    for (s in 0..3) { val q = listOf(8, 9, 10).map { it * 4 + s }; if (c.containsAll(q)) for (p in prs) if (p.none { q.contains(it) }) out.add(q + p) } // seri spesial J Q K + pasangan
     val res = ArrayList<Opt>()
     for (cs in out) {
         val e = ev(cs)
@@ -484,7 +503,7 @@ fun why(g: Game, me: Int, cards: List<Int>): String {
         return if (cards.size == m3.size && m3.all { cards.contains(it) }) "" else "Fase kumpulin 3: keluarin semua kartu 3 kamu sekaligus (" + m3.size + " kartu)."
     }
     if (e == null) {
-        return if (cards.size > 2) "Bukan kombinasi valid. Seri harus satu logo semua (3+ kartu berurutan, tanpa 2). Lainnya: pasangan, 3 kembar, 3 kembar + pasangan, seri + pasangan." else "Dua kartu harus angka sama (pasangan)."
+        return if (cards.size > 2) "Bukan kombinasi valid. Seri harus satu logo semua (3+ kartu berurutan, angka 3 sampai 10), atau seri spesial J Q K satu logo (boleh + pasangan). Lainnya: pasangan, 3 kembar, 3 kembar + pasangan, seri + pasangan." else "Dua kartu harus angka sama (pasangan)."
     }
     if (cuts(e, last)) return ""
     if (last != null && twoPlay(last)) {
@@ -492,7 +511,7 @@ fun why(g: Game, me: Int, cards: List<Int>): String {
     }
     if (last != null && !beats(e, last)) {
         if (e.t != last.t || e.n != last.n) {
-            return "Harus jenis dan jumlah kartu yang sama: " + (TYPE_NAME[last.t] ?: "") + (if (last.t == 'r') " " + last.n + " kartu" else "") + "."
+            return "Harus jenis dan jumlah kartu yang sama: " + (if (isJqk(last)) jqkName(last).lowercase() else (TYPE_NAME[last.t] ?: "") + (if (last.t == 'r') " " + last.n + " kartu" else "") + "."
         }
         return if (e.t == 'f' || e.t == 'x' || e.t == 'g') "Bagian utamanya (3 kembar / seri / 4 kembar) harus lebih tinggi dari yang di meja. Pasangannya bebas." else "Kartunya kurang tinggi dari yang di meja."
     }
@@ -519,6 +538,7 @@ fun groupHand(hs: List<Int>): List<Int> {
             }
         }
     }
+    for (sx in 0..3) { val q = listOf(8, 9, 10).map { it * 4 + sx }; if (q.all { hs.contains(it) && !used.contains(it) }) { gr.add(q); used.addAll(q) } } // seri spesial J Q K
     for ((_, l) in by) { val a = l.filter { !used.contains(it) }; if (a.size == 2) { gp.add(a); used.addAll(a) } }
     for (c in hs.filter { !used.contains(it) }.sorted()) gs.add(listOf(c))
     val res = ArrayList<Int>()

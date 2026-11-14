@@ -1,6 +1,6 @@
 package id.kartu13.app
 
-// Tahap 2.6: isi tutorial. Port dari `TUT` dan `GUIDE` di game.js (v44.11).
+// Tahap 2.6: isi tutorial. Port dari `TUT` dan `GUIDE` di game.js (v45).
 // Teks pakai tag <b> sederhana (dirender lewat Html.fromHtml). Kartu ditulis "5♠", "10♦", dst.
 
 class Slide(
@@ -43,10 +43,13 @@ val TUT: List<Slide> = listOf(
     ),
     Slide(
         "Seri",
-        listOf("Seri = minimal 3 kartu berurutan, wajib satu logo, dan cuma angka 3 sampai 10 (nggak boleh J, Q, K, A, 2). Seri terpanjang 8 kartu."),
+        listOf("Seri = minimal 3 kartu berurutan, wajib satu logo, dan angka 3 sampai 10. Seri terpanjang 8 kartu.", "Pengecualian: seri spesial J Q K. Tepat 3 kartu J, Q, K satu logo juga dianggap seri, dan jadi seri 3 kartu tertinggi (menang lawan seri 3 kartu biasa, mis. 8 9 10). Cuma J Q K, nggak boleh disambung ke 10 atau A. Seperti seri biasa, boleh ditambah 1 pasangan (5 kartu) dan tetap menang lawan seri + pasangan biasa."),
         ex = listOf("✅ Seri sah" to listOf("5♦", "6♦", "7♦"),
             "❌ Beda logo" to listOf("5♦", "6♥", "7♦"),
-            "❌ Ada J (di atas 10)" to listOf("9♠", "10♠", "J♠"))
+            "❌ Ada J (di atas 10)" to listOf("9♠", "10♠", "J♠"),
+            "✅ Seri spesial J Q K" to listOf("J♣", "Q♣", "K♣"),
+            "✅ J Q K + pasangan" to listOf("J♦", "Q♦", "K♦", "7♠", "7♦"),
+            "❌ J Q K beda logo" to listOf("J♣", "Q♦", "K♣"))
     ),
     Slide(
         "Kombinasi + pasangan",
