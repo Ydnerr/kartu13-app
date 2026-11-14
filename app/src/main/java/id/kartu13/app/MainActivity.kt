@@ -16,6 +16,11 @@ class MainActivity : Activity() {
         setContentView(view)
     }
 
+    // selama voice aktif, tombol volume HP mengatur volume panggilan (suara voice), bukan volume media
+    fun setVoiceVolumeControl(on: Boolean) {
+        volumeControlStream = if (on) AudioManager.STREAM_VOICE_CALL else AudioManager.STREAM_MUSIC
+    }
+
     fun requestMicPermission() {
         if (android.os.Build.VERSION.SDK_INT >= 23 && checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 13013)

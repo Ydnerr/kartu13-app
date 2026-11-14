@@ -52,6 +52,20 @@ private val DARK = Color.parseColor("#201a08")
 private val FELT2 = Color.parseColor("#0c2a20")
 private val OKC = Color.parseColor("#7be3a0")
 private val BADC = Color.parseColor("#ff8a80")
+private val PMID = Color.parseColor("#f0c24b") // ping sedang (kuning), sama dengan .p-mid di web
+private val PBAD = Color.parseColor("#ff8c80") // ping jelek (merah), sama dengan .p-bad di web
+
+// ambang sama dengan web: < 120 ms bagus (hijau), < 300 ms sedang (kuning), selebihnya jelek (merah)
+private fun pingColor(ms: Long?): Int = when {
+    ms == null || ms < 120L -> OKC
+    ms < 300L -> PMID
+    else -> PBAD
+}
+private fun pingBars(ms: Long?): Int = when {
+    ms == null || ms < 120L -> 3
+    ms < 300L -> 2
+    else -> 1
+}
 private val NAMES = arrayOf("Kamu", "Bot Budi", "Bot Sari", "Bot Joko")
 private const val CARD_RATIO = 0.657f
 
@@ -71,7 +85,7 @@ private val RULES = arrayOf(
 )
 
 class GameView(ctx: Context) : View(ctx) {
-    private enum class Screen { HOME, GAME, LOBBY, RULES, TUTMENU, TUTSLIDE, GUIDE }
+    private enum class Screen { HOME, GAME, LOBBY, RULES, TUTMENU, TUTSLIDE, GUIDE, CREDITS }
 
     private class Hit(val r: RectF, val id: String, val idx: Int)
 
@@ -80,7 +94,7 @@ class GameView(ctx: Context) : View(ctx) {
     private val prefs = ctx.getSharedPreferences("k13", Context.MODE_PRIVATE)
     private val snd = Snd(ctx)
     private val firebase by lazy { FirebaseRoom(ctx) }
-    private val voice by lazy { VoiceChatManager(ctx, FirebaseRoom.database(ctx).reference, firebase.playerId) { status -> post { voiceStatus = status; invalidate() } } }
+    private val voice by lazy { VoiceChatManager(ctx, FirebaseRoom.database(ctx).reference, firebase.playerId, { on -> post { (ctx as? MainActivity)?.setVoiceVolumeControl(on) } }) { status -> post { voiceStatus = status; invalidate() } } }
     private var voiceStatus = "Voice tidak aktif"
     private var waitingMicPermission = false
     private var pttHeld = false
@@ -92,6 +106,14 @@ class GameView(ctx: Context) : View(ctx) {
     private var roomMessage = ""
     private var lastLog = 0
     private var screen = Screen.HOME
+    private var exitDialog: AlertDialog? = null
+
+    // ---- tahap 5: meter FPS (sama dengan web: pilihan tersimpan, nyala/mati dari footer menu depan)
+    private var fpsOn = prefs.getBoolean("fps", false)
+    private var fpsFrames = 0
+    private var fpsT0 = 0L
+    private var fpsWorst = 0L
+    private var fpsText = "mengukur..."
     private var lv = prefs.getInt("lv", 1).coerceIn(0, 3)
     private var game: Game? = null
     private val sel = ArrayList<Int>()
@@ -363,22 +385,54 @@ class GameView(ctx: Context) : View(ctx) {
     }
 
     fun stop() {
+        exitDialog?.dismiss()
         handler.removeCallbacksAndMessages(null)
         voice.leave()
         if (multiplayer || roomState != null) firebase.stopListening(keepDisconnect = roomState?.status == "play") // game jalan: biarkan server menandai putus -> AFK -> bot ambil alih
         snd.release()
     }
 
+    // keluar ke menu depan: bersihkan bot, voice, dan room
+    private fun leaveToHome() {
+        handler.removeCallbacks(botTask)
+        voice.leave()
+        if (screen == Screen.LOBBY || multiplayer) firebase.leave()
+        multiplayer = false; roomState = null; game = null; screen = Screen.HOME
+        tutScroll = 0f
+    }
+
+    // game yang lagi jalan atau lobby room butuh konfirmasi dulu (tombol Back / Menu kepencet nggak langsung keluar)
+    private fun needsExitConfirm(): Boolean = screen == Screen.LOBBY || (screen == Screen.GAME && game?.over == false)
+
+    private fun confirmExit() {
+        if (exitDialog?.isShowing == true) return
+        val lobby = screen == Screen.LOBBY
+        val title = if (lobby) "Keluar dari room?" else "Keluar dari game?"
+        val body = when {
+            lobby -> "Kamu akan keluar dari room ini."
+            multiplayer -> "Kamu nggak bisa balik ke game ini. Kursimu akan diambil alih bot."
+            else -> "Game yang lagi jalan akan hilang."
+        }
+        exitDialog = AlertDialog.Builder(context)
+            .setTitle(title)
+            .setMessage(body)
+            .setNegativeButton(if (lobby) "Batal" else "Lanjut main", null)
+            .setPositiveButton("Keluar") { _, _ -> leaveToHome(); invalidate() }
+            .create()
+        exitDialog?.show()
+    }
+
     fun onBack(): Boolean {
         if (screen == Screen.HOME) return false
-        handler.removeCallbacks(botTask)
-        if (screen == Screen.TUTSLIDE || screen == Screen.GUIDE) screen = Screen.TUTMENU
-        else {
-            voice.leave()
-            if (screen == Screen.LOBBY || multiplayer) firebase.leave()
-            multiplayer = false; roomState = null; game = null; screen = Screen.HOME
+        if (screen == Screen.TUTSLIDE || screen == Screen.GUIDE) {
+            screen = Screen.TUTMENU
+            tutScroll = 0f
+        } else if (needsExitConfirm()) {
+            confirmExit()
+            return true
+        } else {
+            leaveToHome()
         }
-        tutScroll = 0f
         invalidate()
         return true
     }
@@ -424,7 +478,14 @@ class GameView(ctx: Context) : View(ctx) {
             }
             "gn" -> { gI = min(GUIDE.size - 1, gI + 1); gStep() }
             "gm" -> { lv = 0; startGame(null) }
-            "back", "menu" -> { handler.removeCallbacks(botTask); voice.leave(); if (multiplayer) firebase.leave(); multiplayer = false; roomState = null; game = null; screen = Screen.HOME }
+            "back" -> leaveToHome()
+            "menu" -> if (needsExitConfirm()) confirmExit() else leaveToHome()
+            "credits" -> { screen = Screen.CREDITS; rulesScroll = 0f }
+            "fpsT" -> {
+                fpsOn = !fpsOn
+                prefs.edit().putBoolean("fps", fpsOn).apply()
+                fpsFrames = 0; fpsT0 = 0L; fpsWorst = 0L; fpsText = "mengukur..."
+            }
             "again" -> if (multiplayer) roomState?.let { st -> firebase.startGame(st) { r -> if (r.isFailure) { msg = r.exceptionOrNull()?.message ?: "Gagal mulai ulang"; invalidate() } } } else startGame(nextLead())
             "card" -> {
                 msg = ""
@@ -473,7 +534,7 @@ class GameView(ctx: Context) : View(ctx) {
                     invalidate()
                     return true
                 }
-                if (screen == Screen.RULES) {
+                if (screen == Screen.RULES || screen == Screen.CREDITS) {
                     rulesScroll = (rulesScroll - (e.y - lastY)).coerceIn(0f, max(0f, rulesMax))
                     lastY = e.y
                     invalidate()
@@ -677,7 +738,8 @@ class GameView(ctx: Context) : View(ctx) {
     override fun onDraw(c: Canvas) {
         hits.clear()
         now = SystemClock.uptimeMillis()
-        frameDt = min(50L, max(1L, now - lastT))
+        val rawDt = now - lastT
+        frameDt = min(50L, max(1L, rawDt))
         lastT = now
         anim = false
         slow = false
@@ -707,7 +769,9 @@ class GameView(ctx: Context) : View(ctx) {
             Screen.TUTMENU -> drawTutMenu(c, l, t, w, b)
             Screen.TUTSLIDE -> drawTutSlide(c, l, t, w, b)
             Screen.GUIDE -> drawGuide(c, l, t, w, b)
+            Screen.CREDITS -> drawCredits(c, l, t, w, b)
         }
+        if (fpsOn) { drawFps(c, l, t, rawDt); anim = true } // meter FPS mengukur frame terus-menerus, jadi layar digambar tiap frame selama nyala
         if (anim) postInvalidateOnAnimation() else if (slow) postInvalidateDelayed(250L)
     }
 
@@ -784,9 +848,69 @@ class GameView(ctx: Context) : View(ctx) {
         button(c, RectF(x0 + tw + tg, y, x0 + 2 * tw + tg, y + d(40f)), "Suara: " + (if (snd.sfxOn) "nyala" else "mati"), "sfx", true, !snd.sfxOn, -1, 12f)
         button(c, RectF(x0 + 2 * (tw + tg), y, x0 + ww, y + d(40f)), "Kartu: " + (if (big) "besar" else "normal"), "big", true, !big, -1, 12f)
         val v = versionName()
-        if (roomMessage.isNotEmpty()) txt(c, roomMessage, cx, b - d(56f), d(11f), WARN, Paint.Align.CENTER)
-        txt(c, "© 2026 Poker 13" + (if (v.isNotEmpty()) " · v$v" else ""), cx, b - d(40f), d(11f), MUTE)
-        txt(c, "AI-assisted by Claude · Card art: Vecteezy.com", cx, b - d(24f), d(11f), MUTE)
+        if (roomMessage.isNotEmpty()) txt(c, roomMessage, cx, b - d(76f), d(11f), WARN, Paint.Align.CENTER)
+        txt(c, "© 2026 Poker 13" + (if (v.isNotEmpty()) " · v$v" else ""), cx, b - d(58f), d(11f), MUTE)
+        txt(c, "AI-assisted by Claude · Card art: Vecteezy.com", cx, b - d(42f), d(11f), MUTE)
+        // tautan footer: Kredit & versi, Meter FPS (sama seperti footer web)
+        val s1 = "Kredit & versi"
+        val s2 = "Meter FPS: " + (if (fpsOn) "nyala" else "mati")
+        tp.reset()
+        tp.textSize = d(11f)
+        tp.typeface = Typeface.DEFAULT_BOLD
+        val w1 = tp.measureText(s1)
+        val w2 = tp.measureText(s2)
+        val gp = d(28f)
+        val sx = cx - (w1 + gp + w2) / 2
+        val fy = b - d(22f)
+        txt(c, s1, sx, fy, d(11f), GOLD, Paint.Align.LEFT, true)
+        txt(c, s2, sx + w1 + gp, fy, d(11f), GOLD, Paint.Align.LEFT, true)
+        hits.add(Hit(RectF(sx - d(12f), fy - d(22f), sx + w1 + d(12f), fy + d(12f)), "credits", -1))
+        hits.add(Hit(RectF(sx + w1 + gp - d(12f), fy - d(22f), sx + w1 + gp + w2 + d(12f), fy + d(12f)), "fpsT", -1))
+    }
+
+    private fun drawFps(c: Canvas, l: Float, t: Float, rawDt: Long) {
+        if (fpsT0 == 0L) fpsT0 = now
+        fpsFrames++
+        if (rawDt in 1L..999L) fpsWorst = max(fpsWorst, rawDt)
+        val el = now - fpsT0
+        if (el >= 1000L) {
+            fpsText = Math.round(fpsFrames * 1000f / el).toString() + " fps | terburuk " + fpsWorst + " ms"
+            fpsFrames = 0; fpsWorst = 0L; fpsT0 = now
+        }
+        tp.reset()
+        tp.isAntiAlias = true
+        tp.textSize = d(12f)
+        tp.typeface = Typeface.MONOSPACE
+        tp.color = OKC
+        tp.textAlign = Paint.Align.LEFT
+        val r = RectF(l + d(6f), t + d(6f), l + d(6f) + tp.measureText(fpsText) + d(14f), t + d(6f) + d(24f))
+        box(c, r, Color.argb(200, 0, 0, 0), 0, 0f, d(6f))
+        c.drawText(fpsText, r.left + d(7f), r.centerY() + d(4f), tp)
+    }
+
+    private fun drawCredits(c: Canvas, l: Float, t: Float, w: Float, b: Float) {
+        val m = d(18f)
+        txt(c, "Kredit & versi", l + w / 2, t + d(36f), d(22f), GOLD, Paint.Align.CENTER, true)
+        val v = versionName()
+        val items = listOf(
+            "Versi" to "Aplikasi " + (if (v.isNotEmpty()) "v$v" else "-") + " · protokol game ${FirebaseRoom.VMAJ}.\nRoom bisa dimainkan campur dengan web poker13.my.id selama versi protokolnya sama.",
+            "Gambar kartu" to "Vecteezy.com (Set of poker cards, resource 53654344), Vecteezy Free License, wajib atribusi. Rincian lisensi ada di berkas Vecteezy-License-Information.pdf di repo. Logo di tengah J♥, Q♥, dan K♥ disesuaikan jadi ♥.",
+            "Teknologi" to "Firebase Realtime Database untuk room multiplayer, WebRTC untuk voice chat. Semua suara dan musik disintesis di dalam app, tanpa file audio.",
+            "Dibuat dengan" to "AI-assisted by Claude (Anthropic).\n© 2026 Poker 13."
+        )
+        val top = t + d(56f)
+        val bottom = b - d(76f)
+        c.save()
+        c.clipRect(l, top, l + w, bottom)
+        var y = top - rulesScroll
+        for ((h, body) in items) {
+            txt(c, h, l + m, y + d(16f), d(15f), GOLD, Paint.Align.LEFT, true)
+            y += d(24f)
+            y += para(c, body, l + m, y, (w - 2 * m).toInt(), d(15f), INK, Layout.Alignment.ALIGN_NORMAL) + d(18f)
+        }
+        c.restore()
+        rulesMax = (y + rulesScroll) - bottom
+        button(c, RectF(l + m, b - d(62f), l + w - m, b - d(14f)), "Kembali", "back", true, false)
     }
 
     private fun playerName(seat: Int): String = seatNames.getOrNull(seat) ?: NAMES.getOrElse(seat) { "Pemain" }
@@ -1139,7 +1263,7 @@ class GameView(ctx: Context) : View(ctx) {
             "away" -> Color.parseColor("#e0b44c")
             "off" -> Color.parseColor("#ffb36b")
             "afk" -> BADC
-            else -> OKC
+            else -> pingColor(status.ping)
         }
         val r = d(if (compact) 3.2f else 4f)
         paint.style = Paint.Style.FILL
@@ -1159,13 +1283,37 @@ class GameView(ctx: Context) : View(ctx) {
         }
         txt(c, label, x + d(9f), y + d(3.5f), d(if (compact) 8f else 9f), color, Paint.Align.LEFT, true)
         if (status.state == "on" && status.ping != null) {
-            val bars = when { status.ping < 120 -> 3; status.ping < 300 -> 2; else -> 1 }
+            val bars = pingBars(status.ping)
             for (i in 0 until 3) {
                 val bh = d(3f + i * 2.2f)
                 paint.color = if (i < bars) color else Color.argb(55, 255, 255, 255)
                 c.drawRoundRect(x - d(34f) + d(i * 4.5f), y + d(4f) - bh, x - d(31f) + d(i * 4.5f), y + d(4f), d(1f), d(1f), paint)
             }
         }
+    }
+
+    // ping kamu sendiri di layar main: "PING KAMU  ▂▄▆  45 ms" (rata kanan). Putus dari server = merah
+    private fun drawMyPing(c: Canvas, right: Float, y: Float) {
+        val st = roomState
+        val online = st?.connected == true
+        val ms = st?.myPing
+        val color = if (online) pingColor(ms) else BADC
+        val label = if (!online) "OFFLINE" else if (ms != null) "$ms ms" else "..."
+        val size = d(10f)
+        tp.reset()
+        tp.textSize = size
+        tp.typeface = Typeface.DEFAULT_BOLD
+        val lw = tp.measureText(label)
+        txt(c, label, right, y, size, color, Paint.Align.RIGHT, true)
+        val bars = if (online) pingBars(ms) else 0
+        val bx = right - lw - d(8f) - d(13f)
+        paint.style = Paint.Style.FILL
+        for (i in 0 until 3) {
+            val bh = d(3.5f + i * 2.5f)
+            paint.color = if (i < bars) color else Color.argb(55, 255, 255, 255)
+            c.drawRoundRect(bx + d(i * 4.5f), y - bh, bx + d(i * 4.5f) + d(3f), y, d(1f), d(1f), paint)
+        }
+        txt(c, "PING KAMU", bx - d(6f), y, size, MUTE, Paint.Align.RIGHT, true)
     }
 
     private fun drawLobby(c: Canvas, l: Float, t: Float, w: Float, b: Float) {
@@ -1196,7 +1344,7 @@ class GameView(ctx: Context) : View(ctx) {
         button(c, RectF(boxR.right - d(104f), boxR.top + d(5f), boxR.right - d(50f), boxR.top + d(37f)), "CHAT", "chat", true, true, -1, 8f)
         button(c, RectF(boxR.right - d(44f), boxR.top + d(5f), boxR.right - d(8f), boxR.top + d(37f)), "☺", "react", true, true, -1, 12f)
         val srv = if (!state.connected) "SERVER OFFLINE" else state.myPing?.let { "SERVER · ${it} ms" } ?: "SERVER ONLINE"
-        txt(c, srv, boxR.right - d(14f), boxR.top + d(51f), d(8f), if (state.connected) OKC else BADC, Paint.Align.RIGHT, true)
+        txt(c, srv, boxR.right - d(14f), boxR.top + d(51f), d(8f), if (state.connected) pingColor(state.myPing) else BADC, Paint.Align.RIGHT, true)
         val vbH = drawVoiceBar(c, boxR.left + d(12f), boxR.right - d(12f), boxR.top + d(58f))
         var yy = boxR.top + d(76f) + (if (vbH > 0f) vbH + d(6f) else 0f)
         state.players.forEachIndexed { index, p ->
@@ -1518,6 +1666,10 @@ class GameView(ctx: Context) : View(ctx) {
             button(c, RectF(l + w - m - d(52f), y, l + w - m, y + d(36f)), "☺", "react", true, true, -1, 13f)
         } else txt(c, "Level: " + LEVELS[lv], l + w - m, y + d(24f), d(13f), MUTE, Paint.Align.RIGHT)
         y += d(44f)
+        if (multiplayer) { // ping sendiri ke server, warnanya hijau / kuning / merah
+            drawMyPing(c, l + w - m, y + d(8f))
+            y += d(16f)
+        }
         if (multiplayer) {
             val vb = drawVoiceBar(c, l + m, l + w - m, y)
             if (vb > 0f) y += vb + d(6f)
@@ -1566,7 +1718,7 @@ class GameView(ctx: Context) : View(ctx) {
                     "afk" -> "AFK · BOT"
                     else -> status.ping?.let { "${it} ms" } ?: "ONLINE"
                 }
-                txt(c, statusText, r.centerX(), r.bottom - d(7f), d(8f), when (status.state) { "afk", "off" -> BADC; "away" -> GOLD; else -> OKC }, Paint.Align.CENTER, true)
+                txt(c, statusText, r.centerX(), r.bottom - d(7f), d(8f), when (status.state) { "afk", "off" -> BADC; "away" -> GOLD; else -> pingColor(status.ping) }, Paint.Align.CENTER, true)
             }
         }
 

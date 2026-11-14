@@ -20,7 +20,7 @@ import java.util.concurrent.ThreadFactory
 import java.util.concurrent.TimeUnit
 
 /** WebRTC mesh voice client compatible with Kartu13 web v44 rooms/{code}/voice and vsig. */
-class VoiceChatManager(context: Context, private val db: DatabaseReference, private val playerId: String, private val onStatus: (String) -> Unit) {
+class VoiceChatManager(context: Context, private val db: DatabaseReference, private val playerId: String, private val onJoinedChange: ((Boolean) -> Unit)? = null, private val onStatus: (String) -> Unit) {
     private val app = context.applicationContext
     private var code: String? = null
     private var factory: PeerConnectionFactory? = null
@@ -146,7 +146,7 @@ class VoiceChatManager(context: Context, private val db: DatabaseReference, priv
             voiceRef.addValueEventListener(voiceListener!!)
             voiceRef.child(playerId).setValue(mapOf("t" to ServerValue.TIMESTAMP))
             (app.getSystemService(Context.AUDIO_SERVICE) as AudioManager).mode = AudioManager.MODE_IN_COMMUNICATION
-            routeAudio(); watchDevices() // MODE_IN_COMMUNICATION default-nya ke speaker telinga (kayak telepon): paksa ke speaker luar
+            raiseCallVolume(); routeAudio(); watchDevices(); onJoinedChange?.invoke(true) // MODE_IN_COMMUNICATION default-nya ke speaker telinga (kayak telepon): paksa ke speaker luar
             onStatus("Mikrofon aktif · menunggu pemain lain")
             scheduler?.shutdownNow()
             scheduler = Executors.newSingleThreadScheduledExecutor(ThreadFactory { r -> Thread(r).apply { isDaemon = true } }).also {
@@ -181,12 +181,20 @@ class VoiceChatManager(context: Context, private val db: DatabaseReference, priv
         try { micTrack?.dispose(); audioSource?.dispose(); factory?.dispose(); adm?.release() } catch (_: Exception) {}
         micTrack = null; audioSource = null; factory = null; adm = null
         code = null; members.clear(); muted = false
-        unwatchDevices(); resetRoute()
+        unwatchDevices(); resetRoute(); onJoinedChange?.invoke(false)
         try { (app.getSystemService(Context.AUDIO_SERVICE) as AudioManager).mode = AudioManager.MODE_NORMAL } catch (_: Exception) {}
         onStatus("Voice tidak aktif")
     }
 
     private fun audioMgr() = app.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+
+    /** Suara voice diputar lewat stream PANGGILAN (MODE_IN_COMMUNICATION), volumenya terpisah dari volume media. Naikkan ke maksimal saat gabung; tombol volume HP ikut mengatur stream ini selama voice aktif. */
+    private fun raiseCallVolume() {
+        try {
+            val am = audioMgr()
+            am.setStreamVolume(AudioManager.STREAM_VOICE_CALL, am.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL), 0)
+        } catch (_: Throwable) {}
+    }
 
     /** Keluar lewat speaker luar, kecuali ada headset (kabel / USB / Bluetooth): itu tetap dipakai. */
     @Suppress("DEPRECATION")
