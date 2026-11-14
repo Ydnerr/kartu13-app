@@ -25,7 +25,7 @@ import kotlin.random.Random
  */
 class FirebaseRoom(context: Context) {
     companion object {
-        const val VMAJ = "v44" // sama persis dengan web: VMAJ = VER.split('.')[0] dari VER = 'v44.11'
+        const val VMAJ = "v45" // sama persis dengan web: VMAJ = VER.split('.')[0] dari VER = 'v45' di game.js
         private const val DB_URL = "https://poker13-86781-default-rtdb.asia-southeast1.firebasedatabase.app"
         private const val API_KEY = "AIzaSyDuIFh5L1U6QfmGXf6gwyqhLNqs_flk6-A"
         private const val PROJECT_ID = "poker13-86781"
@@ -618,7 +618,7 @@ object GameWire {
 
     fun decode(raw: Map<String, Any?>, localPid: String): Pair<Game, List<String>>? {
         val ver = raw["v"]?.toString()
-        if (ver != FirebaseRoom.VMAJ && ver != "44") return null // "44" = game lama buatan app versi sebelumnya
+        if (ver != FirebaseRoom.VMAJ) return null // sama seperti web: game beda versi mayor ditolak (aturan J Q K berubah di v45)
         val orderPids = (raw["order"] as? List<*>)?.mapNotNull { it as? String } ?: return null
         if (orderPids.size !in 2..4 || localPid !in orderPids) return null
         val rotated = orderPids.dropWhile { it != localPid } + orderPids.takeWhile { it != localPid }

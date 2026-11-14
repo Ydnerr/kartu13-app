@@ -1,8 +1,13 @@
 package id.kartu13.app
 
 import android.content.Context
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioManager
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import com.google.firebase.database.*
 import org.json.JSONObject
@@ -29,10 +34,11 @@ class VoiceChatManager(context: Context, private val db: DatabaseReference, priv
     private var signalListener: ChildEventListener? = null
     private val peers = ConcurrentHashMap<String, Peer>()
     private val members = ConcurrentHashMap<String, Long>()
-    // indikator bicara: id pemain -> waktu (uptime ms) terakhir terdengar. Ambang sama dengan web (lo .02, lawan .03).
+    // indikator bicara: id pemain -> waktu (uptime ms) terakhir terdengar. Ambang sama dengan web (kamu .02, lawan .03).
     private val speakingNow = ConcurrentHashMap<String, Long>()
     private var scheduler: ScheduledExecutorService? = null
     private var lastSpeakKey = ""
+    private var deviceCb: AudioDeviceCallback? = null
     private val iceServers = listOf(
         PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
         PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer(),
@@ -53,6 +59,8 @@ class VoiceChatManager(context: Context, private val db: DatabaseReference, priv
         private const val MIC_TH = 0.02
         private const val REMOTE_TH = 0.03
         private const val HOLD_MS = 450L
+        // Headset yang dihormati (nggak dipaksa ke speaker): kabel, USB, Bluetooth SCO, BLE (26 = TYPE_BLE_HEADSET, API 31)
+        private val HEADSET_TYPES = setOf(AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_WIRED_HEADPHONES, AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_BLUETOOTH_SCO, 26)
     }
 
     fun isJoined() = joined
@@ -138,6 +146,7 @@ class VoiceChatManager(context: Context, private val db: DatabaseReference, priv
             voiceRef.addValueEventListener(voiceListener!!)
             voiceRef.child(playerId).setValue(mapOf("t" to ServerValue.TIMESTAMP))
             (app.getSystemService(Context.AUDIO_SERVICE) as AudioManager).mode = AudioManager.MODE_IN_COMMUNICATION
+            routeAudio(); watchDevices() // MODE_IN_COMMUNICATION default-nya ke speaker telinga (kayak telepon): paksa ke speaker luar
             onStatus("Mikrofon aktif · menunggu pemain lain")
             scheduler?.shutdownNow()
             scheduler = Executors.newSingleThreadScheduledExecutor(ThreadFactory { r -> Thread(r).apply { isDaemon = true } }).also {
@@ -172,8 +181,55 @@ class VoiceChatManager(context: Context, private val db: DatabaseReference, priv
         try { micTrack?.dispose(); audioSource?.dispose(); factory?.dispose(); adm?.release() } catch (_: Exception) {}
         micTrack = null; audioSource = null; factory = null; adm = null
         code = null; members.clear(); muted = false
+        unwatchDevices(); resetRoute()
         try { (app.getSystemService(Context.AUDIO_SERVICE) as AudioManager).mode = AudioManager.MODE_NORMAL } catch (_: Exception) {}
         onStatus("Voice tidak aktif")
+    }
+
+    private fun audioMgr() = app.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+
+    /** Keluar lewat speaker luar, kecuali ada headset (kabel / USB / Bluetooth): itu tetap dipakai. */
+    @Suppress("DEPRECATION")
+    private fun routeAudio() {
+        try {
+            val am = audioMgr()
+            if (Build.VERSION.SDK_INT >= 31) {
+                val devs = am.availableCommunicationDevices
+                val target = devs.firstOrNull { it.type in HEADSET_TYPES } ?: devs.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+                if (target != null) am.setCommunicationDevice(target)
+            } else {
+                val headset = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS).any { it.type in HEADSET_TYPES }
+                am.isSpeakerphoneOn = !headset
+            }
+        } catch (_: Throwable) {}
+    }
+
+    @Suppress("DEPRECATION")
+    private fun resetRoute() {
+        try {
+            val am = audioMgr()
+            if (Build.VERSION.SDK_INT >= 31) am.clearCommunicationDevice()
+            else am.isSpeakerphoneOn = false
+        } catch (_: Throwable) {}
+    }
+
+    // headset dicolok / dicabut / Bluetooth nyambung saat voice jalan: atur ulang jalurnya
+    private fun watchDevices() {
+        if (deviceCb != null) return
+        try {
+            val cb = object : AudioDeviceCallback() {
+                override fun onAudioDevicesAdded(added: Array<out AudioDeviceInfo>?) { if (joined) routeAudio() }
+                override fun onAudioDevicesRemoved(removed: Array<out AudioDeviceInfo>?) { if (joined) routeAudio() }
+            }
+            deviceCb = cb
+            audioMgr().registerAudioDeviceCallback(cb, Handler(Looper.getMainLooper()))
+        } catch (_: Throwable) { deviceCb = null }
+    }
+
+    private fun unwatchDevices() {
+        val cb = deviceCb ?: return
+        deviceCb = null
+        try { audioMgr().unregisterAudioDeviceCallback(cb) } catch (_: Throwable) {}
     }
 
     private fun createPeer(id: String, makeOffer: Boolean): Peer? {
